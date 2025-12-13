@@ -1,0 +1,27 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background: transparent;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+}
+
+.rectangle {
+    position: absolute;
+    background-color: rgba(0, 123, 255, 0); /* Semi-transparent blue */
+    border: 3px solid rgb(0, 123, 255);
+    border-radius: 4px;
+    pointer-events: auto;
+    z-index: 1000;
+    /* Default position - you can change this */
+    top: 100px;
+    left: 100px;
+    /* Default size - will be overridden by JavaScript */
+    width: 200px;
+    height: 150px;
+}

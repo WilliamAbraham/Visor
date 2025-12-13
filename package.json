@@ -1,0 +1,15 @@
+{
+  "name": "visor1.0",
+  "version": "1.0.0",
+  "description": "<p align=\"center\">   <img src=\"imgs/logo.png\" alt=\"Logo\"> </p> <!-- <a href=\"https://trendshift.io/repositories/12975\" target=\"_blank\"><img src=\"https://trendshift.io/api/badge/repositories/12975\" alt=\"microsoft%2FOmniParser | Trendshift\" style=\"width: 250px; height: 55px;\" width=\"250\" height=\"55\"/></a> -->",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^39.2.7"
+  }
+}
