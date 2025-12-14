@@ -47,3 +47,6 @@ out/
 debug.ipynb
 wget-log
 *.tmp
+
+# Environment variables
+.env

@@ -1,6 +1,33 @@
+require('dotenv').config({ path: require('path').join(__dirname, '.env') })
+
 const { app, BrowserWindow, screen } = require('electron/main')
 const path = require('path')
 const {ipcMain} = require('electron')
+const OpenAI = require('openai')
+
+// Initialize OpenAI client in main process
+const apiKey = process.env.OPENAI_API_KEY || ''
+console.log('API Key loaded:', apiKey ? `${apiKey.substring(0, 10)}...` : 'NOT FOUND')
+
+const openai = new OpenAI({
+  apiKey: apiKey
+})
+
+const instruction = await fs.readFile("visorAgent.txt", "utf-8");
+
+// Handle chat completion using OpenAI SDK
+ipcMain.handle('chat-completion', async (event, message) => {
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: message }]
+    })
+    return { success: true, response: response.choices[0].message.content }
+  } catch (error) {
+    console.error('Chat completion error:', error)
+    return { success: false, error: error.message }
+  }
+})
 
 // Hide dock icon on macOS
 const is_mac = process.platform === 'darwin'
@@ -8,11 +35,12 @@ if (is_mac) {
   app.dock.hide()
 }
 
-const createWindow = () => {
+// Create overlay window (transparent, click-through)
+const createOverlayWindow = () => {
   const primaryDisplay = screen.getPrimaryDisplay()
   const { width, height, x, y } = primaryDisplay.bounds
 
-  const win = new BrowserWindow({
+  const overlayWin = new BrowserWindow({
     width: width,
     height: height,
     x: x,
@@ -40,28 +68,72 @@ const createWindow = () => {
   
   // macOS: Set window level to appear above dock/dashboard
   if (is_mac) {
-    win.setAlwaysOnTop(true, 'screen-saver')
-    win.setVisibleOnAllWorkspaces(false) // Only show on current screen/workspace
+    overlayWin.setAlwaysOnTop(true, 'screen-saver')
+    overlayWin.setVisibleOnAllWorkspaces(false)
   }
   
   // Make window click-through (clicks pass through to desktop)
-  win.setIgnoreMouseEvents(true, { forward: true })
+  overlayWin.setIgnoreMouseEvents(true, { forward: true })
   
   // Prevent window from being closed
-  win.on('close', (event) => {
+  overlayWin.on('close', (event) => {
     event.preventDefault()
     return false
   })
   
-  win.loadFile('app/index.html')
+  overlayWin.loadFile('app/index.html')
+  return overlayWin
+}
+
+// Create chatbox window (interactive)
+const createChatWindow = () => {
+  const primaryDisplay = screen.getPrimaryDisplay()
+  const { width, height } = primaryDisplay.bounds
+
+  const chatWin = new BrowserWindow({
+    width: 400,
+    height: 600,
+    x: width - 420, // Position on right side
+    y: 50,
+    webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        nodeIntegration: false,
+        contextIsolation: true
+    },
+    frame: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: true,
+    movable: true,
+    closable: true,
+    minimizable: true,
+    maximizable: false,
+    backgroundColor: '#1e1e1e',
+  })
+  
+  if (is_mac) {
+    chatWin.setAlwaysOnTop(true, 'floating')
+    chatWin.setVisibleOnAllWorkspaces(false)
+  }
+  
+  chatWin.loadFile('app/chat.html')
+  
+  // Open DevTools automatically to see console logs
+  chatWin.webContents.once('did-finish-load', () => {
+    chatWin.webContents.openDevTools()
+  })
+  
+  return chatWin
 }
 
 app.whenReady().then(() => {
-  createWindow()
+  createOverlayWindow()
+  createChatWindow()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
+      createOverlayWindow()
+      createChatWindow()
     }
   })
 })

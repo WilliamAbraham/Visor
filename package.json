@@ -11,5 +11,11 @@
   "license": "ISC",
   "devDependencies": {
     "electron": "^39.2.7"
+  },
+  "dependencies": {
+    "@openai/agents": "^0.3.4",
+    "dotenv": "^17.2.3",
+    "openai": "^6.10.0",
+    "zod": "^3.25.76"
   }
 }
