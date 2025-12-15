@@ -7,6 +7,6 @@ contextBridge.exposeInMainWorld('versions', {
 })
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  chatCompletion: (message) => ipcRenderer.invoke('chat-completion', message)
+  chatCompletion: (messages) => ipcRenderer.invoke('chat-completion', messages)
 })
 

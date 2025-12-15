@@ -79,6 +79,7 @@ with gr.Blocks() as demo:
         with gr.Column():
             image_output_component = gr.Image(type='pil', label='Image Output')
             text_output_component = gr.Textbox(label='Parsed screen elements', placeholder='Text Output')
+            print(f'Text output component created: {text_output_component}')
 
     submit_button_component.click(
         fn=process,

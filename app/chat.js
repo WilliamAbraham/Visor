@@ -4,12 +4,21 @@ const messageInput = document.getElementById('messageInput');
 const sendButton = document.getElementById('sendButton');
 const messagesContainer = document.getElementById('messages');
 
+// Store conversation history for context
+const conversationHistory = [];
+
 function addMessage(text, type = 'user') {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${type}`;
     messageDiv.textContent = text;
     messagesContainer.appendChild(messageDiv);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    
+    // Add to conversation history
+    conversationHistory.push({
+        role: type === 'user' ? 'user' : 'assistant',
+        content: text
+    });
 }
 
 async function sendMessage() {
@@ -20,7 +29,7 @@ async function sendMessage() {
     messageInput.value = '';
 
     try {
-        const result = await window.electronAPI.chatCompletion(message);
+        const result = await window.electronAPI.chatCompletion(conversationHistory);
         if (result.success) {
             addMessage(result.response, 'system');
         } else {
@@ -37,4 +46,9 @@ messageInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') sendMessage();
 });
 
-addMessage('Welcome to Visor Chat!', 'system');
+// Don't add welcome message to conversation history
+const welcomeDiv = document.createElement('div');
+welcomeDiv.className = 'message system';
+welcomeDiv.textContent = 'Welcome to Visor Chat!';
+messagesContainer.appendChild(welcomeDiv);
+messagesContainer.scrollTop = messagesContainer.scrollHeight;

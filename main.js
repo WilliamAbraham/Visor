@@ -13,14 +13,12 @@ const openai = new OpenAI({
   apiKey: apiKey
 })
 
-const instruction = await fs.readFile("visorAgent.txt", "utf-8");
-
 // Handle chat completion using OpenAI SDK
-ipcMain.handle('chat-completion', async (event, message) => {
+ipcMain.handle('chat-completion', async (event, messages) => {
   try {
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: message }]
+      messages: messages
     })
     return { success: true, response: response.choices[0].message.content }
   } catch (error) {
