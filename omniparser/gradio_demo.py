@@ -49,7 +49,14 @@ def process(
     }
     # import pdb; pdb.set_trace()
 
-    ocr_bbox_rslt, is_goal_filtered = check_ocr_box(image_input, display_img = False, output_bb_format='xyxy', goal_filtering=None, easyocr_args={'paragraph': False, 'text_threshold':0.9}, use_paddleocr=use_paddleocr)
+    ocr_bbox_rslt, is_goal_filtered = check_ocr_box(
+        image_input, 
+        display_img = False, 
+        output_bb_format='xyxy', 
+        goal_filtering=None, 
+        easyocr_args={'paragraph': False, 'text_threshold':0.5}, 
+        use_paddleocr=use_paddleocr
+    )
     text, ocr_bbox = ocr_bbox_rslt
     dino_labled_img, label_coordinates, parsed_content_list = get_som_labeled_img(image_input, yolo_model, BOX_TRESHOLD = box_threshold, output_coord_in_ratio=True, ocr_bbox=ocr_bbox,draw_bbox_config=draw_bbox_config, caption_model_processor=caption_model_processor, ocr_text=text,iou_threshold=iou_threshold, imgsz=imgsz,)  
     image = Image.open(io.BytesIO(base64.b64decode(dino_labled_img)))

@@ -1,5 +1,3 @@
-console.log('chat.js loaded');
-
 const messageInput = document.getElementById('messageInput');
 const sendButton = document.getElementById('sendButton');
 const messagesContainer = document.getElementById('messages');
@@ -14,16 +12,31 @@ function addMessage(text, type = 'user') {
     messagesContainer.appendChild(messageDiv);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
     
-    // Add to conversation history
     conversationHistory.push({
         role: type === 'user' ? 'user' : 'assistant',
         content: text
     });
 }
 
+async function captureScreenshot() {
+    try {
+        const result = await window.electronAPI.takeScreenshot();
+        if (result.success) {
+            console.log('Screenshot saved:', result.filename);
+            return result.filename;
+        } else {
+            console.error('Screenshot failed:', result.error);
+        }
+    } catch (error) {
+        console.error('Error taking screenshot:', error);
+    }
+}
+
 async function sendMessage() {
     const message = messageInput.value.trim();
     if (!message) return;
+
+    const screenshot = await captureScreenshot();
 
     addMessage(message, 'user');
     messageInput.value = '';
@@ -46,9 +59,8 @@ messageInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') sendMessage();
 });
 
-// Don't add welcome message to conversation history
 const welcomeDiv = document.createElement('div');
 welcomeDiv.className = 'message system';
-welcomeDiv.textContent = 'Welcome to Visor Chat!';
+welcomeDiv.textContent = 'Welcome to Visor Chat! Ask anything about the screen you are looking at.';
 messagesContainer.appendChild(welcomeDiv);
 messagesContainer.scrollTop = messagesContainer.scrollHeight;

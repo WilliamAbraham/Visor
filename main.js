@@ -4,6 +4,7 @@ const { app, BrowserWindow, screen } = require('electron/main')
 const path = require('path')
 const {ipcMain} = require('electron')
 const OpenAI = require('openai')
+const { takeScreenshot } = require('./utils/screenshot')
 
 // Initialize OpenAI client in main process
 const apiKey = process.env.OPENAI_API_KEY || ''
@@ -23,6 +24,17 @@ ipcMain.handle('chat-completion', async (event, messages) => {
     return { success: true, response: response.choices[0].message.content }
   } catch (error) {
     console.error('Chat completion error:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// Handle screenshot taking
+ipcMain.handle('take-screenshot', async (event) => {
+  try {
+    const filename = await takeScreenshot()
+    return { success: true, filename: filename }
+  } catch (error) {
+    console.error('Screenshot error:', error)
     return { success: false, error: error.message }
   }
 })
