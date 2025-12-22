@@ -50,3 +50,11 @@ wget-log
 
 # Environment variables
 .env
+
+# Application data (screenshots, outputs)
+data/screenshots/
+data/labeled_screenshots/
+*.png
+*.jpg
+*.jpeg
+!data/config/

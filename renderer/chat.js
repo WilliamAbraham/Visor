@@ -38,6 +38,20 @@ async function sendMessage() {
 
     const screenshot = await captureScreenshot();
 
+    // Parse screenshot with FastAPI server
+    if (screenshot) {
+        try {
+            const result = await window.electronAPI.parseScreenshot(screenshot);
+            if (result.success) {
+                console.log('Parsed content:', result.parsedContent);
+            } else {
+                console.error('Parse failed:', result.error);
+            }
+        } catch (error) {
+            console.error('Error parsing screenshot:', error);
+        }
+    }
+
     addMessage(message, 'user');
     messageInput.value = '';
 

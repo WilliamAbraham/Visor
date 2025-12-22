@@ -9,7 +9,7 @@ const path = require('path')
 async function takeScreenshot() {
   try {
     // Get the screenshots directory path
-    const screenshotsDir = path.join(__dirname, '..', 'screenshots')
+    const screenshotsDir = path.join(__dirname, '..', 'data', 'screenshots')
     
     // Create screenshots directory if it doesn't exist
     if (!fs.existsSync(screenshotsDir)) {

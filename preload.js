@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('versions', {
 
 contextBridge.exposeInMainWorld('electronAPI', {
   chatCompletion: (messages) => ipcRenderer.invoke('chat-completion', messages),
-  takeScreenshot: () => ipcRenderer.invoke('take-screenshot')
+  takeScreenshot: () => ipcRenderer.invoke('take-screenshot'),
+  parseScreenshot: (filename) => ipcRenderer.invoke('parse-screenshot', filename)
 })
 

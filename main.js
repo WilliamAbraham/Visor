@@ -5,11 +5,9 @@ const path = require('path')
 const {ipcMain} = require('electron')
 const OpenAI = require('openai')
 const { takeScreenshot } = require('./utils/screenshot')
+const http = require('http')
 
-// Initialize OpenAI client in main process
 const apiKey = process.env.OPENAI_API_KEY || ''
-console.log('API Key loaded:', apiKey ? `${apiKey.substring(0, 10)}...` : 'NOT FOUND')
-
 const openai = new OpenAI({
   apiKey: apiKey
 })
@@ -35,6 +33,46 @@ ipcMain.handle('take-screenshot', async (event) => {
     return { success: true, filename: filename }
   } catch (error) {
     console.error('Screenshot error:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// Handle parsing screenshot with FastAPI server
+ipcMain.handle('parse-screenshot', async (event, filename) => {
+    console.log('parsing screnshot')
+  try {
+    const fullPath = path.join(__dirname, 'data', 'screenshots', filename)
+    const encodedPath = encodeURIComponent(fullPath)
+    const url = `http://127.0.0.1:7777/omni?filepath=${encodedPath}`
+    
+    return new Promise((resolve, reject) => {
+      const request = http.get(url, (response) => {
+        let data = ''
+        
+        response.on('data', (chunk) => {
+          data += chunk
+        })
+        
+        response.on('end', () => {
+          if (response.statusCode === 200) {
+            resolve({ success: true, parsedContent: data })
+          } else {
+            reject(new Error(`Server error: ${response.statusCode} - ${data}`))
+          }
+        })
+      })
+      
+      request.on('error', (error) => {
+        reject(new Error(`Request failed: ${error.message}`))
+      })
+      
+      request.setTimeout(300000, () => {
+        request.destroy()
+        reject(new Error('Request timeout'))
+      })
+    })
+  } catch (error) {
+    console.error('Parse screenshot error:', error)
     return { success: false, error: error.message }
   }
 })
@@ -90,21 +128,23 @@ const createOverlayWindow = () => {
     event.preventDefault()
     return false
   })
+
+  overlayWin.setContentProtection(true)
   
-  overlayWin.loadFile('app/index.html')
+  overlayWin.loadFile('renderer/index.html')
   return overlayWin
 }
 
 // Create chatbox window (interactive)
 const createChatWindow = () => {
   const primaryDisplay = screen.getPrimaryDisplay()
-  const { width, height } = primaryDisplay.bounds
+  const { width, height, x, y } = primaryDisplay.bounds
 
   const chatWin = new BrowserWindow({
     width: 400,
     height: 600,
-    x: width - 420, // Position on right side
-    y: 50,
+    x: x + width - 420, // Position on right side of primary display
+    y: y + 50,
     webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
         nodeIntegration: false,
@@ -123,10 +163,12 @@ const createChatWindow = () => {
   
   if (is_mac) {
     chatWin.setAlwaysOnTop(true, 'floating')
-    chatWin.setVisibleOnAllWorkspaces(false)
+    chatWin.setVisibleOnAllWorkspaces(false) // Show on all workspaces/desktops
   }
+
+  chatWin.setContentProtection(true)
   
-  chatWin.loadFile('app/chat.html')
+  chatWin.loadFile('renderer/chat.html')
   
   // Open DevTools automatically to see console logs
   chatWin.webContents.once('did-finish-load', () => {
