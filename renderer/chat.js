@@ -46,10 +46,15 @@ async function sendMessage() {
                 console.log('Parsed content:', result.parsedContent);
             } else {
                 console.error('Parse failed:', result.error);
+                addMessage(`Error: ${result.error}`, 'system');
+                return
             }
         } catch (error) {
             console.error('Error parsing screenshot:', error);
         }
+    } else {
+        addMessage('Error: Failed to take screenshot', 'system');
+        return
     }
 
     addMessage(message, 'user');

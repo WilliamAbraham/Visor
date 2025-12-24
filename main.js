@@ -11,6 +11,7 @@ const apiKey = process.env.OPENAI_API_KEY || ''
 const openai = new OpenAI({
   apiKey: apiKey
 })
+let isParsingScreenshot = false
 
 // Handle chat completion using OpenAI SDK
 ipcMain.handle('chat-completion', async (event, messages) => {
@@ -28,6 +29,9 @@ ipcMain.handle('chat-completion', async (event, messages) => {
 
 // Handle screenshot taking
 ipcMain.handle('take-screenshot', async (event) => {
+  if (isParsingScreenshot) {
+    return { success: false, error: 'Screenshot is already being parsed' }
+  }
   try {
     const filename = await takeScreenshot()
     return { success: true, filename: filename }
@@ -39,13 +43,19 @@ ipcMain.handle('take-screenshot', async (event) => {
 
 // Handle parsing screenshot with FastAPI server
 ipcMain.handle('parse-screenshot', async (event, filename) => {
-    console.log('parsing screnshot')
+
+  if (isParsingScreenshot) {
+    return { success: false, error: 'Screenshot is already being parsed' }
+  }
+
+  isParsingScreenshot = true
+
   try {
     const fullPath = path.join(__dirname, 'data', 'screenshots', filename)
     const encodedPath = encodeURIComponent(fullPath)
     const url = `http://127.0.0.1:7777/omni?filepath=${encodedPath}`
     
-    return new Promise((resolve, reject) => {
+    const result = await new Promise((resolve, reject) => {
       const request = http.get(url, (response) => {
         let data = ''
         
@@ -71,6 +81,9 @@ ipcMain.handle('parse-screenshot', async (event, filename) => {
         reject(new Error('Request timeout'))
       })
     })
+
+    isParsingScreenshot = false
+    return result
   } catch (error) {
     console.error('Parse screenshot error:', error)
     return { success: false, error: error.message }
