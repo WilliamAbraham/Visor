@@ -11,9 +11,13 @@ from util.utils import check_ocr_box, get_yolo_model, get_caption_model_processo
 import torch
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-yolo_model = get_yolo_model(model_path='weights/icon_detect/model.pt')
+
+# Get project root directory (3 levels up from this file: services/omniparser/server.py -> services/omniparser -> services -> root)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+
+yolo_model = get_yolo_model(model_path=os.path.join(PROJECT_ROOT, 'weights', 'icon_detect', 'model.pt'))
 yolo_model = yolo_model.to(str(DEVICE))
-caption_model_processor = get_caption_model_processor(model_name="florence2", model_name_or_path="weights/icon_caption_florence", device=str(DEVICE))
+caption_model_processor = get_caption_model_processor(model_name="florence2", model_name_or_path=os.path.join(PROJECT_ROOT, 'weights', 'icon_caption_florence'), device=str(DEVICE))
 # caption_model_processor = get_caption_model_processor(model_name="blip2", model_name_or_path="weights/icon_caption_blip2")
 
 HOST = "127.0.0.1"
@@ -82,8 +86,7 @@ def process(
     dino_labled_img, label_coordinates, parsed_content_list = get_som_labeled_img(image_input, yolo_model, BOX_TRESHOLD = box_threshold, output_coord_in_ratio=True, ocr_bbox=ocr_bbox,draw_bbox_config=draw_bbox_config, caption_model_processor=caption_model_processor, ocr_text=text,iou_threshold=iou_threshold, imgsz=imgsz,)  
     image = Image.open(io.BytesIO(base64.b64decode(dino_labled_img)))
     print('finish processing')
-    parsed_content_list = '\n'.join([f'icon {i}: ' + str(v) for i,v in enumerate(parsed_content_list)])
-    return image, str(parsed_content_list)
+    return image, parsed_content_list
 
 if __name__ == "__main__":
     import uvicorn
