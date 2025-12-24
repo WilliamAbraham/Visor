@@ -1,6 +1,7 @@
 const messageInput = document.getElementById('messageInput');
 const sendButton = document.getElementById('sendButton');
 const messagesContainer = document.getElementById('messages');
+const testRectBtn = document.getElementById('testRectBtn');
 
 // Store conversation history for context
 const conversationHistory = [];
@@ -15,6 +16,22 @@ function addMessage(text, type = 'user') {
     conversationHistory.push({
         role: type === 'user' ? 'user' : 'assistant',
         content: text
+    });
+}
+
+if (testRectBtn) {
+    testRectBtn.addEventListener('click', () => {
+        console.log('Sending draw-rectangle event');
+        // Random position/size for testing
+        const x = Math.floor(Math.random() * 800);
+        const y = Math.floor(Math.random() * 600);
+        window.electronAPI.sendDrawRectangle({
+            x: x,
+            y: y,
+            width: 100,
+            height: 100
+        });
+        addMessage(`Sent test rect to ${x},${y}`, 'system');
     });
 }
 
@@ -43,7 +60,8 @@ async function sendMessage() {
         try {
             const result = await window.electronAPI.parseScreenshot(screenshot);
             if (result.success) {
-                console.log('Parsed content:', result.parsedContent);
+                const boundingBoxes = getAllBoundingBoxes(result.parsedContent);
+                console.log('Bounding boxes:', boundingBoxes);
             } else {
                 console.error('Parse failed:', result.error);
                 addMessage(`Error: ${result.error}`, 'system');
@@ -71,6 +89,12 @@ async function sendMessage() {
         console.error('Error:', error);
         addMessage(`Error: ${error.message}`, 'system');
     }
+}
+
+function getAllBoundingBoxes(parsedContent) {
+    const boundingBoxes = parsedContent.bounding_boxes;
+    console.log(boundingBoxes);
+    return boundingBoxes;
 }
 
 sendButton.addEventListener('click', sendMessage);

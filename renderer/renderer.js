@@ -10,5 +10,12 @@ function setRectanglePosition(x, y) {
     rectangle.style.top = `${y}px`
 }
 
-setRectangleSize(60, 60)
-setRectanglePosition(1100, 900)
+window.electronAPI.onDrawRectangle((data) => {
+    console.log('Received draw-rectangle:', data)
+    if (data.width && data.height) {
+        setRectangleSize(data.width, data.height)
+    }
+    if (data.x !== undefined && data.y !== undefined) {
+        setRectanglePosition(data.x, data.y)
+    }
+})

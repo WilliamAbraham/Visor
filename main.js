@@ -13,6 +13,7 @@ const openai = new OpenAI({
   apiKey: apiKey
 })
 let isParsingScreenshot = false
+let overlayWin = null
 
 // Handle chat completion using OpenAI SDK
 ipcMain.handle('chat-completion', async (event, messages) => {
@@ -125,6 +126,13 @@ ipcMain.handle('parse-screenshot', async (event, filename) => {
   }
 })
 
+// Handle draw rectangle request
+ipcMain.on('draw-rectangle', (event, data) => {
+  if (overlayWin) {
+    overlayWin.webContents.send('draw-rectangle', data)
+  }
+})
+
 // Hide dock icon on macOS
 const is_mac = process.platform === 'darwin'
 if (is_mac) {
@@ -136,7 +144,7 @@ const createOverlayWindow = () => {
   const primaryDisplay = screen.getPrimaryDisplay()
   const { width, height, x, y } = primaryDisplay.bounds
 
-  const overlayWin = new BrowserWindow({
+  overlayWin = new BrowserWindow({
     width: width,
     height: height,
     x: x,
