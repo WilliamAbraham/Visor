@@ -1,8 +1,12 @@
-from fastapi import FastAPI
+# temporary publish server with:
+# cloudflared tunnel --url http://127.0.0.1:7777
+
+
+from fastapi import FastAPI, Body
 from typing import Optional
 from PIL import Image
 import io
-import base64, os
+import base64, os, time
 from util.utils import check_ocr_box, get_yolo_model, get_caption_model_processor, get_som_labeled_img
 import torch
 
@@ -20,19 +24,34 @@ app = FastAPI()
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "labeled_screenshots")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-@app.get("/omni")
-async def parse_screenshot(filepath: str):
-    input_image = Image.open(filepath)
-    box_threshold = 0.05
-    iou_threshold = 0.1
-    use_paddleocr = False
-    imgsz = 640
-    image, parsed_content_list = process(input_image, box_threshold, iou_threshold, use_paddleocr, imgsz)
+@app.get("/hello")
+async def hello(name : str):
+    return {"message": f"Hello, {name}!"}
 
-    output_filepath = os.path.join(OUTPUT_DIR, os.path.basename(filepath))
-    image.save(output_filepath)
+@app.post("/omni")
+async def parse_screenshot(image_base64: str = Body(...)):
+    try:
+        # Decode base64 image
+        image_data = base64.b64decode(image_base64)
+        input_image = Image.open(io.BytesIO(image_data))
+        
+        # Use hardcoded settings
+        box_threshold = 0.05
+        iou_threshold = 0.1
+        use_paddleocr = False
+        imgsz = 640
+        
+        image, parsed_content_list = process(input_image, box_threshold, iou_threshold, use_paddleocr, imgsz)
 
-    return parsed_content_list
+        # Save output with timestamp
+        output_filename = f"labeled_{int(time.time())}.png"
+        output_filepath = os.path.join(OUTPUT_DIR, output_filename)
+        image.save(output_filepath)
+
+        return {"success": True, "parsed_content": parsed_content_list}
+    except Exception as e:
+        print(f"Error processing image: {e}")
+        return {"success": False, "error": str(e)}
 
 def process(
     image_input,

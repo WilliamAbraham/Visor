@@ -5,7 +5,8 @@ const path = require('path')
 const {ipcMain} = require('electron')
 const OpenAI = require('openai')
 const { takeScreenshot } = require('./utils/screenshot')
-const http = require('http')
+const https = require('https')
+const { URL } = require('url')
 
 const apiKey = process.env.OPENAI_API_KEY || ''
 const openai = new OpenAI({
@@ -41,12 +42,37 @@ ipcMain.handle('take-screenshot', async (event) => {
 ipcMain.handle('parse-screenshot', async (event, filename) => {
     console.log('parsing screnshot')
   try {
+    const fs = require('fs')
     const fullPath = path.join(__dirname, 'data', 'screenshots', filename)
-    const encodedPath = encodeURIComponent(fullPath)
-    const url = `http://127.0.0.1:7777/omni?filepath=${encodedPath}`
+    
+    // Read image file and convert to base64
+    const imageBuffer = fs.readFileSync(fullPath)
+    const imageBase64 = imageBuffer.toString('base64')
+    
+    // Send base64 string directly as JSON string
+    const postData = JSON.stringify(imageBase64)
+    
+    // Get server URL from environment variable (full HTTPS URL)
+    const serverUrl = process.env.OMNIPARSER_SERVER_URL
+    const parsedUrl = new URL(serverUrl)
+    
+    // Build path (append /omni to existing pathname)
+    const basePath = parsedUrl.pathname || '/'
+    const requestPath = basePath.endsWith('/') ? `${basePath}omni` : `${basePath}/omni`
+    
+    const options = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || 443,
+      path: requestPath,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData)
+      }
+    }
     
     return new Promise((resolve, reject) => {
-      const request = http.get(url, (response) => {
+      const request = https.request(options, (response) => {
         let data = ''
         
         response.on('data', (chunk) => {
@@ -54,10 +80,15 @@ ipcMain.handle('parse-screenshot', async (event, filename) => {
         })
         
         response.on('end', () => {
-          if (response.statusCode === 200) {
-            resolve({ success: true, parsedContent: data })
-          } else {
-            reject(new Error(`Server error: ${response.statusCode} - ${data}`))
+          try {
+            const result = JSON.parse(data)
+            if (response.statusCode === 200 && result.success) {
+              resolve({ success: true, parsedContent: result.parsed_content })
+            } else {
+              reject(new Error(result.error || `Server error: ${response.statusCode}`))
+            }
+          } catch (parseError) {
+            reject(new Error(`Failed to parse response: ${parseError.message}`))
           }
         })
       })
@@ -70,6 +101,9 @@ ipcMain.handle('parse-screenshot', async (event, filename) => {
         request.destroy()
         reject(new Error('Request timeout'))
       })
+      
+      request.write(postData)
+      request.end()
     })
   } catch (error) {
     console.error('Parse screenshot error:', error)
