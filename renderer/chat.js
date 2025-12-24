@@ -62,6 +62,19 @@ async function sendMessage() {
             if (result.success) {
                 const boundingBoxes = getAllBoundingBoxes(result.parsedContent);
                 console.log('Bounding boxes:', boundingBoxes);
+
+                const screenWidth = window.screen.width;
+                const screenHeight = window.screen.height;
+
+                const rects = boundingBoxes.map(bbox => ({
+                    x: bbox[0] * screenWidth,
+                    y: bbox[1] * screenHeight,
+                    width: (bbox[2] - bbox[0]) * screenWidth,
+                    height: (bbox[3] - bbox[1]) * screenHeight
+                }));
+
+                console.log('Sending rects:', rects);
+                window.electronAPI.sendDrawRectangle(rects);
             } else {
                 console.error('Parse failed:', result.error);
                 addMessage(`Error: ${result.error}`, 'system');
@@ -92,9 +105,22 @@ async function sendMessage() {
 }
 
 function getAllBoundingBoxes(parsedContent) {
-    const boundingBoxes = parsedContent.bounding_boxes;
-    console.log(boundingBoxes);
-    return boundingBoxes;
+    const boxes = [];
+    if (typeof parsedContent !== 'string') return boxes;
+
+    const lines = parsedContent.split('\n');
+    for (const line of lines) {
+        // Look for 'bbox': [x, y, x, y] pattern
+        const match = line.match(/'bbox':\s*\[([\d\.\s,]+)\]/);
+        if (match && match[1]) {
+            // Parse the numbers from the captured group
+            const coords = match[1].split(',').map(n => parseFloat(n.trim()));
+            if (coords.length === 4) {
+                boxes.push(coords);
+            }
+        }
+    }
+    return boxes;
 }
 
 sendButton.addEventListener('click', sendMessage);

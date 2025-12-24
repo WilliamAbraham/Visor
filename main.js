@@ -149,13 +149,14 @@ const createOverlayWindow = () => {
     height: height,
     x: x,
     y: y,
+    enableLargerThanScreen: true,
+    hasShadow: false,
     webPreferences: {
         preload: path.join(__dirname, 'preload.js')
     },
     transparent: true,
     frame: false,
     backgroundColor: '#00000000',
-    titleBarStyle: 'hidden',
     alwaysOnTop: true,
     skipTaskbar: true,
     resizable: false,
@@ -163,11 +164,6 @@ const createOverlayWindow = () => {
     closable: false,
     minimizable: false,
     maximizable: false,
-    titleBarOverlay: {
-        color: '#00000000',
-        symbolColor: '#00000000',
-        height: 0
-    },
   })
   
   // macOS: Set window level to appear above dock/dashboard
