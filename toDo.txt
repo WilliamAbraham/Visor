@@ -1,6 +1,0 @@
-Update server.py to return a json of elements
-
-Update chat.js to handle parsedContents as a json
-
-Integrate parsedContent into sendMessage
-    Total prompt should include: user message, parsedContents, visorAgent Config

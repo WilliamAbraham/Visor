@@ -19,7 +19,7 @@ let overlayWin = null
 ipcMain.handle('chat-completion', async (event, messages) => {
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'gpt-4o',
       messages: messages
     })
     return { success: true, response: response.choices[0].message.content }
@@ -94,7 +94,7 @@ ipcMain.handle('parse-screenshot', async (event, filename) => {
           try {
             const result = JSON.parse(data)
             if (response.statusCode === 200 && result.success) {
-              resolve({ success: true, parsedContent: result.parsed_content })
+              resolve({ success: true, parsedContent: result.parsed_content, imageBase64: imageBase64 })
             } else {
               reject(new Error(result.error || `Server error: ${response.statusCode}`))
             }

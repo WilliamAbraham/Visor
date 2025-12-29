@@ -1,10 +1,10 @@
 const messageInput = document.getElementById('messageInput');
 const sendButton = document.getElementById('sendButton');
 const messagesContainer = document.getElementById('messages');
-const testRectBtn = document.getElementById('testRectBtn');
 
-// Store conversation history for context
-const conversationHistory = [];
+// Initialize Visor Agent
+const agent = new VisorAgent();
+agent.init();
 
 function addMessage(text, type = 'user') {
     const messageDiv = document.createElement('div');
@@ -12,27 +12,6 @@ function addMessage(text, type = 'user') {
     messageDiv.textContent = text;
     messagesContainer.appendChild(messageDiv);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    
-    conversationHistory.push({
-        role: type === 'user' ? 'user' : 'assistant',
-        content: text
-    });
-}
-
-if (testRectBtn) {
-    testRectBtn.addEventListener('click', () => {
-        console.log('Sending draw-rectangle event');
-        // Random position/size for testing
-        const x = Math.floor(Math.random() * 800);
-        const y = Math.floor(Math.random() * 600);
-        window.electronAPI.sendDrawRectangle({
-            x: x,
-            y: y,
-            width: 100,
-            height: 100
-        });
-        addMessage(`Sent test rect to ${x},${y}`, 'system');
-    });
 }
 
 async function captureScreenshot() {
@@ -53,28 +32,28 @@ async function sendMessage() {
     const message = messageInput.value.trim();
     if (!message) return;
 
+    // Add user message to UI immediately and clear input field
+    addMessage(message, 'user');
+    messageInput.value = '';
+
     const screenshot = await captureScreenshot();
+
+    // Initilize variables for llm api call
+    let currentImageBase64 = null;
+    let uiContext = "";
+    let boundingBoxes = [];
 
     // Parse screenshot with FastAPI server
     if (screenshot) {
         try {
             const result = await window.electronAPI.parseScreenshot(screenshot);
             if (result.success) {
-                const boundingBoxes = getAllBoundingBoxes(result.parsedContent);
-                console.log('Bounding boxes:', boundingBoxes);
-
-                const screenWidth = window.screen.width;
-                const screenHeight = window.screen.height;
-
-                const rects = boundingBoxes.map(bbox => ({
-                    x: bbox[0] * screenWidth,
-                    y: bbox[1] * screenHeight,
-                    width: (bbox[2] - bbox[0]) * screenWidth,
-                    height: (bbox[3] - bbox[1]) * screenHeight
-                }));
-
-                console.log('Sending rects:', rects);
-                window.electronAPI.sendDrawRectangle(rects);
+                // Construct UI context string for LLM
+                uiContext = result.parsedContent.map((item, i) => 
+                    `ID: ${i} | Type: ${item.type} | Content: "${item.content}"`
+                ).join('\n');
+                currentImageBase64 = result.imageBase64;
+                boundingBoxes = getAllBoundingBoxes(result.parsedContent);
             } else {
                 console.error('Parse failed:', result.error);
                 addMessage(`Error: ${result.error}`, 'system');
@@ -82,52 +61,71 @@ async function sendMessage() {
             }
         } catch (error) {
             console.error('Error parsing screenshot:', error);
+            addMessage(`Error parsing: ${error.message}`, 'system');
+            return
         }
     } else {
         addMessage('Error: Failed to take screenshot', 'system');
         return
     }
 
-    addMessage(message, 'user');
-    messageInput.value = '';
-
+    // Call agent with message, UI context, and screenshot
     try {
-        const result = await window.electronAPI.chatCompletion(conversationHistory);
-        if (result.success) {
-            addMessage(result.response, 'system');
-        } else {
-            throw new Error(result.error || 'Unknown error');
+        const response = await agent.sendMessage(message, uiContext, currentImageBase64);
+        console.log('Agent response:', response);
+        
+        // Highlight element if specified
+        if (response.target_id !== null && response.target_id !== undefined) {
+            await highlightElement(response.target_id, boundingBoxes);
         }
+        
+        // Display the reply
+        addMessage(response.reply, 'system');
+        
+        // Optionally display reasoning in console for debugging
+        if (response.reasoning) {
+            console.log('Reasoning:', response.reasoning);
+        }
+        
     } catch (error) {
         console.error('Error:', error);
         addMessage(`Error: ${error.message}`, 'system');
     }
 }
 
-function getAllBoundingBoxes(parsedContent) {
-    const boxes = [];
-    if (typeof parsedContent !== 'string') return boxes;
-
-    const lines = parsedContent.split('\n');
-    for (const line of lines) {
-        // Look for 'bbox': [x, y, x, y] pattern
-        const match = line.match(/'bbox':\s*\[([\d\.\s,]+)\]/);
-        if (match && match[1]) {
-            // Parse the numbers from the captured group
-            const coords = match[1].split(',').map(n => parseFloat(n.trim()));
-            if (coords.length === 4) {
-                boxes.push(coords);
-            }
-        }
+async function highlightElement(targetId, boundingBoxes) {
+    console.log('Highlighting target ID:', targetId);
+    const targetBox = boundingBoxes[targetId];
+    if (targetBox) {
+        const screenWidth = window.screen.width;
+        const screenHeight = window.screen.height;
+        const rect = {
+            x: targetBox[0] * screenWidth,
+            y: targetBox[1] * screenHeight,
+            width: (targetBox[2] - targetBox[0]) * screenWidth,
+            height: (targetBox[3] - targetBox[1]) * screenHeight
+        };
+        window.electronAPI.sendDrawRectangle(rect);
     }
-    return boxes;
 }
 
+function getAllBoundingBoxes(parsedContent) {
+    // If parsedContent is already an array, just extract the bbox property
+    if (Array.isArray(parsedContent)) {
+        return parsedContent
+            .filter(item => item.bbox) // Ensure bbox exists
+            .map(item => item.bbox);   // Return the [x,y,w,h] array
+    }
+    return [];
+}
+
+// Event listeners
 sendButton.addEventListener('click', sendMessage);
 messageInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') sendMessage();
 });
 
+// Display welcome message
 const welcomeDiv = document.createElement('div');
 welcomeDiv.className = 'message system';
 welcomeDiv.textContent = 'Welcome to Visor Chat! Ask anything about the screen you are looking at.';
