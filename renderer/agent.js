@@ -5,8 +5,8 @@ class VisorAgent {
         this.isInitialized = false;
     }
 
-    /**
-     * Initialize the agent by loading and sending the system prompt
+    /*
+      Initialize the agent by loading and sending the system prompt
      */
     async init() {
         if (this.isInitialized) {
@@ -15,7 +15,7 @@ class VisorAgent {
         }
 
         try {
-            const response = await fetch('data/config/visorAgent.txt');
+            const response = await fetch('../data/config/visorAgent.txt');
             this.systemPrompt = await response.text();
             
             // Send the system prompt to establish context

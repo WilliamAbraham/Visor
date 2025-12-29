@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src https://api.openai.com"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self' https://api.openai.com"
     />
     <title>Visor Chat</title>
     <link rel="stylesheet" href="chat.css">
@@ -18,7 +18,7 @@
         <!-- Messages will appear here -->
       </div>
       <div class="chat-input-container">
-        <input type="text" id="messageInput" placeholder="Type a message..." />
+        <input type="text" id="messageInput" placeholder="Loading agent..." />
         <button id="sendButton">Send</button>
       </div>
     </div>

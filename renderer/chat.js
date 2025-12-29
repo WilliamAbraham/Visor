@@ -4,7 +4,22 @@ const messagesContainer = document.getElementById('messages');
 
 // Initialize Visor Agent
 const agent = new VisorAgent();
-agent.init();
+
+// Disable input until agent is ready
+messageInput.disabled = true;
+sendButton.disabled = true;
+
+// Initialize agent on startup
+agent.init().then(() => {
+    console.log('Visor Agent ready');
+    messageInput.disabled = false;
+    sendButton.disabled = false;
+    messageInput.placeholder = 'Type a message...';
+}).catch(error => {
+    console.error('Failed to initialize agent:', error);
+    addMessage('Failed to initialize AI agent. Please refresh.', 'system');
+    messageInput.placeholder = 'Agent failed to load';
+});
 
 function addMessage(text, type = 'user') {
     const messageDiv = document.createElement('div');
@@ -73,14 +88,13 @@ async function sendMessage() {
     try {
         const response = await agent.sendMessage(message, uiContext, currentImageBase64);
         console.log('Agent response:', response);
+
+        addMessage(response.reply, 'system');
         
         // Highlight element if specified
-        if (response.target_id !== null && response.target_id !== undefined) {
+        if (response.target_id !== null) {
             await highlightElement(response.target_id, boundingBoxes);
         }
-        
-        // Display the reply
-        addMessage(response.reply, 'system');
         
         // Optionally display reasoning in console for debugging
         if (response.reasoning) {
