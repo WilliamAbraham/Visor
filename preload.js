@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   takeScreenshot: () => ipcRenderer.invoke('take-screenshot'),
   parseScreenshot: (filename) => ipcRenderer.invoke('parse-screenshot', filename),
   sendDrawRectangle: (data) => ipcRenderer.send('draw-rectangle', data),
-  onDrawRectangle: (callback) => ipcRenderer.on('draw-rectangle', (_event, value) => callback(value))
+  onDrawRectangle: (callback) => ipcRenderer.on('draw-rectangle', (_event, value) => callback(value)),
+  setClickable: (isClickable) => ipcRenderer.send('set-clickable', isClickable)
 })
 

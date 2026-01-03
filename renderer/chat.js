@@ -1,6 +1,10 @@
 const messageInput = document.getElementById('messageInput');
 const sendButton = document.getElementById('sendButton');
 const messagesContainer = document.getElementById('messages');
+const chatContainer = document.querySelector('.chat-container');
+
+// Track if first message has been sent
+let isFirstMessage = true;
 
 // Initialize Visor Agent
 const agent = new VisorAgent();
@@ -47,6 +51,17 @@ async function sendMessage() {
     const message = messageInput.value.trim();
     if (!message) return;
 
+    // On first message, exit welcome mode
+    if (isFirstMessage) {
+        chatContainer.classList.remove('welcome-mode');
+        // Hide welcome message
+        const welcomeMsg = document.querySelector('.message.welcome');
+        if (welcomeMsg) {
+            welcomeMsg.style.display = 'none';
+        }
+        isFirstMessage = false;
+    }
+
     // Add user message to UI immediately and clear input field
     addMessage(message, 'user');
     messageInput.value = '';
@@ -63,12 +78,14 @@ async function sendMessage() {
         try {
             const result = await window.electronAPI.parseScreenshot(screenshot);
             if (result.success) {
+                console.log('Parsed content:', result.parsedContent);
                 // Construct UI context string for LLM
                 uiContext = result.parsedContent.map((item, i) => 
-                    `ID: ${i} | Type: ${item.type} | Content: "${item.content}"`
+                    `ID: ${i} | Type: ${item.type} | Content: ${item.content} | Interactivity: ${item.interactivity}"`
                 ).join('\n');
                 currentImageBase64 = result.imageBase64;
                 boundingBoxes = getAllBoundingBoxes(result.parsedContent);
+                console.log('UI elements:', uiContext);
             } else {
                 console.error('Parse failed:', result.error);
                 addMessage(`Error: ${result.error}`, 'system');
@@ -141,7 +158,10 @@ messageInput.addEventListener('keypress', (e) => {
 
 // Display welcome message
 const welcomeDiv = document.createElement('div');
-welcomeDiv.className = 'message system';
-welcomeDiv.textContent = 'Welcome to Visor Chat! Ask anything about the screen you are looking at.';
+welcomeDiv.className = 'message system welcome';
+welcomeDiv.textContent = 'Welcome to VisorAI';
 messagesContainer.appendChild(welcomeDiv);
 messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+// Start in welcome mode
+chatContainer.classList.add('welcome-mode');

@@ -9,19 +9,49 @@ body {
     overflow: hidden;
     width: 100vw;
     height: 100vh;
+    pointer-events: none; /* Make body click-through */
 }
 
 .rectangle {
     position: absolute;
-    background-color: rgba(0, 123, 255, 0); /* Semi-transparent blue */
-    border: 3px solid rgb(0, 123, 255);
-    border-radius: 4px;
-    pointer-events: auto;
+    background-color: rgba(59, 130, 246, 0.1); /* Slight blue tint */
+    border: 3px solid rgb(59, 130, 246);
+    border-radius: 8px;
+    pointer-events: auto; /* Make rectangles clickable */
     z-index: 1000;
-    /* Default position - you can change this */
-    top: 100px;
-    left: 100px;
-    /* Default size - will be overridden by JavaScript */
-    width: 200px;
-    height: 150px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    
+    /* Glowing effect */
+    box-shadow: 
+        0 0 15px rgba(59, 130, 246, 0.6),
+        0 0 30px rgba(59, 130, 246, 0.4),
+        inset 0 0 15px rgba(59, 130, 246, 0.1);
+    
+    /* Pulsing animation */
+    animation: pulse 2s ease-in-out infinite;
 }
+
+@keyframes pulse {
+    0%, 100% {
+        box-shadow: 
+            0 0 15px rgba(59, 130, 246, 0.6),
+            0 0 30px rgba(59, 130, 246, 0.4),
+            inset 0 0 15px rgba(59, 130, 246, 0.1);
+    }
+    50% {
+        box-shadow: 
+            0 0 25px rgba(59, 130, 246, 0.8),
+            0 0 50px rgba(59, 130, 246, 0.6),
+            inset 0 0 20px rgba(59, 130, 246, 0.2);
+    }
+}
+.rectangle:hover {
+    background-color: rgba(59, 130, 246, 0.2);
+    border-width: 4px;
+    box-shadow: 
+        0 0 30px rgba(59, 130, 246, 1),
+        0 0 60px rgba(59, 130, 246, 0.8),
+        inset 0 0 20px rgba(59, 130, 246, 0.3);
+}
+

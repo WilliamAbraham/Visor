@@ -17,6 +17,7 @@
     "dotenv": "^17.2.3",
     "openai": "^6.10.0",
     "screenshot-desktop": "^1.15.3",
+    "uiohook-napi": "^1.5.4",
     "zod": "^3.25.76"
   }
 }

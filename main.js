@@ -7,6 +7,7 @@ const OpenAI = require('openai')
 const { takeScreenshot } = require('./utils/screenshot')
 const https = require('https')
 const { URL } = require('url')
+const { uIOhook, UiohookKey } = require('uiohook-napi')
 
 const apiKey = process.env.OPENAI_API_KEY || ''
 const openai = new OpenAI({
@@ -14,12 +15,32 @@ const openai = new OpenAI({
 })
 let isParsingScreenshot = false
 let overlayWin = null
+let activeRect = null // Track active rectangle {x, y, width, height}
+
+// Start global input hook
+uIOhook.on('mousedown', (e) => {
+  if (activeRect) {
+    const { x, y } = e
+    // Check if click is inside active rectangle
+    if (x >= activeRect.x && x <= activeRect.x + activeRect.width &&
+        y >= activeRect.y && y <= activeRect.y + activeRect.height) {
+      
+      // Clicked inside! Clear rectangle
+      if (overlayWin) {
+        overlayWin.webContents.send('draw-rectangle', []) // Send empty to clear
+        activeRect = null
+      }
+    }
+  }
+})
+
+uIOhook.start()
 
 // Handle chat completion using OpenAI SDK
 ipcMain.handle('chat-completion', async (event, messages) => {
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: 'gpt-4o-mini',
       messages: messages
     })
     return { success: true, response: response.choices[0].message.content }
@@ -129,6 +150,14 @@ ipcMain.handle('parse-screenshot', async (event, filename) => {
 // Handle draw rectangle request
 ipcMain.on('draw-rectangle', (event, data) => {
   if (overlayWin) {
+    // Update active rect for hit testing
+    // data can be array or single object. We support single active rect for now based on logic
+    if (Array.isArray(data)) {
+        activeRect = data.length > 0 ? data[0] : null
+    } else {
+        activeRect = data && data.width ? data : null
+    }
+    
     overlayWin.webContents.send('draw-rectangle', data)
   }
 })

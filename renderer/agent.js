@@ -7,7 +7,7 @@ class VisorAgent {
 
     /*
       Initialize the agent by loading and sending the system prompt
-     */
+    */
     async init() {
         if (this.isInitialized) {
             console.warn('VisorAgent already initialized');
@@ -29,33 +29,33 @@ class VisorAgent {
         }
     }
 
-    /**
-     * Add a message to chat history
-     */
+    /*
+       Add a message to chat history
+    */
     addToHistory(role, content) {
         this.chatHistory.push({ role, content });
     }
 
-    /**
-     * Clear chat history
-     */
+    /*
+       Clear chat history
+    */
     clearHistory() {
         this.chatHistory = [];
     }
 
-    /**
-     * Get the full chat history (already includes system prompt from init)
-     */
+    /*
+       Get the full chat history (already includes system prompt from init)
+    */
     getFullHistory() {
         return this.chatHistory;
     }
 
-    /**
-     * Send a message to OpenAI with UI context and screenshot
-     * @param {string} userMessage - The user's query
-     * @param {string} uiContext - Parsed UI elements as string
-     * @param {string} imageBase64 - Screenshot as base64
-     * @returns {Promise<Object>} - The parsed JSON response from the agent
+    /*
+       Send a message to OpenAI with UI context and screenshot
+       @param {string} userMessage - The user's query
+       @param {string} uiContext - Parsed UI elements as string
+       @param {string} imageBase64 - Screenshot as base64
+       @returns {Promise<Object>} - The parsed JSON response from the agent
      */
     async sendMessage(userMessage, uiContext, imageBase64) {
         if (!this.isInitialized) {
@@ -101,8 +101,8 @@ class VisorAgent {
         return parsedResponse;
     }
 
-    /**
-     * Get chat history summary for display
+    /*
+       Get chat history summary for display
      */
     getHistorySummary() {
         return this.chatHistory.map(msg => ({
