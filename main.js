@@ -40,7 +40,7 @@ uIOhook.start()
 ipcMain.handle('chat-completion', async (event, messages) => {
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'gpt-5-mini',
       messages: messages
     })
     return { success: true, response: response.choices[0].message.content }
