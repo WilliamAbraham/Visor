@@ -1,6 +1,6 @@
-# Visor
+# Visor - Work in Progress
 
-Powered by Microsoft's OmniParser, a UI element extraction tool, Visor is a human-in-the-loop
+Powered by Microsoft's OmniParser, a UI element extraction tool, Visor is a **human-in-the-loop**
 computer use tool. Providing visual cues, glowing rectangles, Visor directs users on how to navigate
 their desktop based on prompts.
 
@@ -14,12 +14,12 @@ their desktop based on prompts.
 1. **Ask Visor**: Type a command or question in the chat.
 2. **Screen Analysis**: Visor takes a screenshot and analyzes the UI elements.
 3. **Guidance**: Visor highlights the relevant button or menu item on your screen.
-4. **Action**: Click the highlighted area to perform the action and dismiss the guide.
 
 ## Tech Stack
 - **Electron**: Desktop application framework.
-- **OmniParser**: For screen parsing and UI element detection.
-- **OpenAI GPT-4o**: For intelligent reasoning and natural language.
+- **Node.js**: Backend runtime for the desktop app.
+- **OmniParser**: Screen parsing engine (YOLOv8 + Florence-2).
+- **FastAPI**: Python server for the OmniParser backend.
 
 ## Installation
 
