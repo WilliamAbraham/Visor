@@ -1,18 +1,31 @@
-require('dotenv').config({ path: require('path').join(__dirname, '.env') })
+import { config } from 'dotenv'
+import { app, BrowserWindow, screen } from 'electron/main'
+import path from 'path'
+import { ipcMain } from 'electron'
+import fs from 'fs'
+import { fileURLToPath } from 'url'
+import OpenAI from 'openai'
+import { takeScreenshot } from './utils/screenshot.js'
+import https from 'https'
+import { URL } from 'url'
+import { uIOhook, UiohookKey } from 'uiohook-napi'
+import { OpenRouter } from '@openrouter/sdk'
 
-const { app, BrowserWindow, screen } = require('electron/main')
-const path = require('path')
-const {ipcMain} = require('electron')
-const OpenAI = require('openai')
-const { takeScreenshot } = require('./utils/screenshot')
-const https = require('https')
-const { URL } = require('url')
-const { uIOhook, UiohookKey } = require('uiohook-napi')
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
-const apiKey = process.env.OPENAI_API_KEY || ''
+config({ path: path.join(__dirname, '.env') })
+
+const openaiApiKey = process.env.OPENAI_API_KEY || ''
 const openai = new OpenAI({
-  apiKey: apiKey
+  apiKey: openaiApiKey
 })
+
+const openRouterApiKey = process.env.OPENROUTER_API_KEY || ''
+const openRouter = new OpenRouter({
+    apiKey: openRouterApiKey
+});
+
 let isParsingScreenshot = false
 let overlayWin = null
 let activeRect = null // Track active rectangle {x, y, width, height}
@@ -37,17 +50,21 @@ uIOhook.on('mousedown', (e) => {
 uIOhook.start()
 
 // Handle chat completion using OpenAI SDK
-ipcMain.handle('chat-completion', async (event, messages) => {
-  try {
-    const response = await openai.chat.completions.create({
-      model: 'gpt-5-mini',
-      messages: messages
-    })
-    return { success: true, response: response.choices[0].message.content }
-  } catch (error) {
-    console.error('Chat completion error:', error)
-    return { success: false, error: error.message }
-  }
+ipcMain.handle('chat-completion', async (event, messages, model='google/gemini-3-flash-preview') => {
+
+    console.log("Using model:", model);
+
+/* OpenRouter */
+    const result = await openRouter.chat.send({
+      model: model,
+      messages: messages,
+      stream: false,
+    });
+    const content = result.choices[0].message.content;
+    console.log('OpenRouter response:', content);
+    
+    // Return the content as-is (could be string or object)
+    return { success: true, response: content };
 })
 
 // Handle screenshot taking
@@ -74,7 +91,6 @@ ipcMain.handle('parse-screenshot', async (event, filename) => {
   isParsingScreenshot = true
 
   try {
-    const fs = require('fs')
     const fullPath = path.join(__dirname, 'data', 'screenshots', filename)
     
     // Read image file and convert to base64

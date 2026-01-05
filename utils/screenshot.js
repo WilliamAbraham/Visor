@@ -1,6 +1,10 @@
-const screenshot = require('screenshot-desktop')
-const fs = require('fs')
-const path = require('path')
+import screenshot from 'screenshot-desktop'
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 /**
  * Takes a screenshot and saves it to the screenshots folder
@@ -32,4 +36,4 @@ async function takeScreenshot() {
   }
 }
 
-module.exports = { takeScreenshot }
+export { takeScreenshot }

@@ -33,6 +33,22 @@ function addMessage(text, type = 'user') {
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 
+function showLoadingIndicator() {
+    const loadingDiv = document.createElement('div');
+    loadingDiv.className = 'message system loading';
+    loadingDiv.id = 'loading-indicator';
+    loadingDiv.innerHTML = '<div class="loading-dots"><div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div></div>';
+    messagesContainer.appendChild(loadingDiv);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+function hideLoadingIndicator() {
+    const loadingIndicator = document.getElementById('loading-indicator');
+    if (loadingIndicator) {
+        loadingIndicator.remove();
+    }
+}
+
 async function captureScreenshot() {
     try {
         const result = await window.electronAPI.takeScreenshot();
@@ -66,6 +82,9 @@ async function sendMessage() {
     addMessage(message, 'user');
     messageInput.value = '';
 
+    // Show loading indicator before LLM call
+    showLoadingIndicator();
+
     const screenshot = await captureScreenshot();
 
     // Initilize variables for llm api call
@@ -82,7 +101,6 @@ async function sendMessage() {
                 const filteredContent = result.parsedContent.filter(item => 
                     item.type === 'icon' && item.interactivity
                 );
-                console.log('Filtered content:', filteredContent);
 
                 // Construct UI context string for LLM
                 uiContext = filteredContent.map((item, i) => 
@@ -91,7 +109,6 @@ async function sendMessage() {
 
                 currentImageBase64 = result.imageBase64;
                 boundingBoxes = getAllBoundingBoxes(filteredContent);
-                console.log('UI elements:', uiContext);
             } else {
                 console.error('Parse failed:', result.error);
                 addMessage(`Error: ${result.error}`, 'system');
@@ -112,6 +129,9 @@ async function sendMessage() {
         const response = await agent.sendMessage(message, uiContext, currentImageBase64);
         console.log('Agent response:', response);
         
+        // Hide loading indicator
+        hideLoadingIndicator();
+        
         if (!response.output || !Array.isArray(response.output)) {
             throw new Error('Invalid response format: missing output array');
         }
@@ -122,28 +142,48 @@ async function sendMessage() {
 
         // Process each item in the output array
         for (const item of response.output) {
+            // Handle reasoning type
             if (item.type === 'reasoning') {
-                // Extract reasoning text from summary
-                if (item.summary && Array.isArray(item.summary)) {
-                    reasoningText = item.summary
-                        .filter(s => s.type === 'summary_text')
-                        .map(s => s.text)
-                        .join(' ');
+                if (item.summary) {
+                    reasoningText = item.summary;
                     console.log('Reasoning:', reasoningText);
                 }
-            } else if (item.type === 'computer_call') {
-                // Handle computer actions (like clicks)
+            }
+            
+            // Handle computer_call type
+            else if (item.type === 'computer_call') {
                 if (item.action && item.action.type === 'click' && item.action.target_id) {
                     targetId = item.action.target_id;
-                    console.log('Action: click on', targetId);
+                    console.log('Action: click on', targetId, 'button:', item.action.button || 'left');
                 }
-            } else if (item.type === 'message') {
-                // Collect message text
+            }
+            
+            // Handle message type
+            else if (item.type === 'message') {
                 if (item.reply) {
                     messageText += (messageText ? ' ' : '') + item.reply;
                 }
             }
+            
+            // Fallback: Handle alternative format (direct properties)
+            else {
+                if (item.reasoning) {
+                    reasoningText = item.reasoning;
+                    console.log('Reasoning:', reasoningText);
+                }
+                if (item.computer_call) {
+                    const call = item.computer_call;
+                    if (call.type === 'click' && call.target_id) {
+                        targetId = call.target_id;
+                        console.log('Action: click on', targetId, 'button:', call.button || 'left');
+                    }
+                }
+                if (item.message && item.message.reply) {
+                    messageText += (messageText ? ' ' : '') + item.message.reply;
+                }
+            }
         }
+        console.log('Message text:', messageText);
 
         addMessage(messageText, 'system');
         
@@ -153,6 +193,8 @@ async function sendMessage() {
         }
         
     } catch (error) {
+        // Hide loading indicator on error
+        hideLoadingIndicator();
         console.error('Error:', error);
         addMessage(`Error: ${error.message}`, 'system');
     }
