@@ -78,13 +78,19 @@ async function sendMessage() {
         try {
             const result = await window.electronAPI.parseScreenshot(screenshot);
             if (result.success) {
-                console.log('Parsed content:', result.parsedContent);
+                // Filter content to only include interactive icons
+                const filteredContent = result.parsedContent.filter(item => 
+                    item.type === 'icon' && item.interactivity
+                );
+                console.log('Filtered content:', filteredContent);
+
                 // Construct UI context string for LLM
-                uiContext = result.parsedContent.map((item, i) => 
+                uiContext = filteredContent.map((item, i) => 
                     `ID: ${i} | Type: ${item.type} | Content: ${item.content} | Interactivity: ${item.interactivity}"`
                 ).join('\n');
+
                 currentImageBase64 = result.imageBase64;
-                boundingBoxes = getAllBoundingBoxes(result.parsedContent);
+                boundingBoxes = getAllBoundingBoxes(filteredContent);
                 console.log('UI elements:', uiContext);
             } else {
                 console.error('Parse failed:', result.error);
@@ -105,17 +111,45 @@ async function sendMessage() {
     try {
         const response = await agent.sendMessage(message, uiContext, currentImageBase64);
         console.log('Agent response:', response);
+        
+        if (!response.output || !Array.isArray(response.output)) {
+            throw new Error('Invalid response format: missing output array');
+        }
 
-        addMessage(response.reply, 'system');
+        let targetId = null;
+        let reasoningText = '';
+        let messageText = '';
+
+        // Process each item in the output array
+        for (const item of response.output) {
+            if (item.type === 'reasoning') {
+                // Extract reasoning text from summary
+                if (item.summary && Array.isArray(item.summary)) {
+                    reasoningText = item.summary
+                        .filter(s => s.type === 'summary_text')
+                        .map(s => s.text)
+                        .join(' ');
+                    console.log('Reasoning:', reasoningText);
+                }
+            } else if (item.type === 'computer_call') {
+                // Handle computer actions (like clicks)
+                if (item.action && item.action.type === 'click' && item.action.target_id) {
+                    targetId = item.action.target_id;
+                    console.log('Action: click on', targetId);
+                }
+            } else if (item.type === 'message') {
+                // Collect message text
+                if (item.reply) {
+                    messageText += (messageText ? ' ' : '') + item.reply;
+                }
+            }
+        }
+
+        addMessage(messageText, 'system');
         
         // Highlight element if specified
-        if (response.target_id !== null) {
-            await highlightElement(response.target_id, boundingBoxes);
-        }
-        
-        // Optionally display reasoning in console for debugging
-        if (response.reasoning) {
-            console.log('Reasoning:', response.reasoning);
+        if (targetId && boundingBoxes) {
+            await highlightElement(targetId, boundingBoxes);
         }
         
     } catch (error) {
@@ -137,6 +171,8 @@ async function highlightElement(targetId, boundingBoxes) {
             height: (targetBox[3] - targetBox[1]) * screenHeight
         };
         window.electronAPI.sendDrawRectangle(rect);
+    } else {
+        console.warn('Target ID not found in bounding boxes:', targetId);
     }
 }
 
