@@ -115,7 +115,8 @@ async function sendMessage() {
 
                 // Construct UI context string for LLM
                 uiContext = filteredContent.map((item, i) => 
-                    `ID: ${i} | Type: ${item.type} | Content: ${item.content} | Interactivity: ${item.interactivity}"`
+                    //`ID: ${i} | Type: ${item.type} | Content: ${item.content} | Interactivity: ${item.interactivity}"`
+                    `ID: ${i} | Content: ${item.content}"`
                 ).join('\n');
 
                 currentImageBase64 = result.imageBase64;

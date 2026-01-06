@@ -64,7 +64,7 @@ class VisorAgent {
         }
 
         // Construct the message payload using message history and user input
-        const messages = [...this.chatHistory];
+        const messages = [...this.chatHistory.slice(-10)];
         
         // Format all content as strings
         messages.forEach(msg => {
