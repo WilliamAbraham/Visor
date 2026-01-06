@@ -2,6 +2,16 @@ const messageInput = document.getElementById('messageInput');
 const sendButton = document.getElementById('sendButton');
 const messagesContainer = document.getElementById('messages');
 const chatContainer = document.querySelector('.chat-container');
+const modelSelector = document.getElementById('modelSelector');
+
+// Available models
+const availableModels = [
+    { value: 'google/gemini-3-flash-preview', label: 'Gemini 3 Flash' },
+    { value: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet' },
+    { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
+    { value: 'openai/gpt-4o', label: 'GPT-4o' },
+    { value: 'meta-llama/llama-3.1-70b-instruct', label: 'Llama 3.1 70B' }
+];
 
 // Track if first message has been sent
 let isFirstMessage = true;
@@ -64,6 +74,7 @@ async function captureScreenshot() {
 }
 
 async function sendMessage() {
+    var start = Date.now();
     const message = messageInput.value.trim();
     if (!message) return;
 
@@ -124,9 +135,12 @@ async function sendMessage() {
         return
     }
 
-    // Call agent with message, UI context, and screenshot
+    // Get selected model
+    const selectedModel = modelSelector.value;
+    
+    // Call agent with message, UI context, screenshot, and model
     try {
-        const response = await agent.sendMessage(message, uiContext, currentImageBase64);
+        const response = await agent.sendMessage(message, uiContext, currentImageBase64, selectedModel);
         console.log('Agent response:', response);
         
         // Hide loading indicator
@@ -164,28 +178,11 @@ async function sendMessage() {
                     messageText += (messageText ? ' ' : '') + item.reply;
                 }
             }
-            
-            // Fallback: Handle alternative format (direct properties)
-            else {
-                if (item.reasoning) {
-                    reasoningText = item.reasoning;
-                    console.log('Reasoning:', reasoningText);
-                }
-                if (item.computer_call) {
-                    const call = item.computer_call;
-                    if (call.type === 'click' && call.target_id) {
-                        targetId = call.target_id;
-                        console.log('Action: click on', targetId, 'button:', call.button || 'left');
-                    }
-                }
-                if (item.message && item.message.reply) {
-                    messageText += (messageText ? ' ' : '') + item.message.reply;
-                }
-            }
         }
         console.log('Message text:', messageText);
 
         addMessage(messageText, 'system');
+        agent.addToHistory('assistant', messageText);
         
         // Highlight element if specified
         if (targetId && boundingBoxes) {
@@ -198,6 +195,8 @@ async function sendMessage() {
         console.error('Error:', error);
         addMessage(`Error: ${error.message}`, 'system');
     }
+    var end = Date.now();
+    console.log('Time taken:', end - start, 'ms');
 }
 
 async function highlightElement(targetId, boundingBoxes) {

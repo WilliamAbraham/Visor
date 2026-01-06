@@ -55,42 +55,33 @@ class VisorAgent {
        @param {string} userMessage - The user's query
        @param {string} uiContext - Parsed UI elements as string
        @param {string} imageBase64 - Screenshot as base64
+       @param {string} model - Model to use (optional)
        @returns {Promise<Object>} - The parsed JSON response from the agent
      */
-    async sendMessage(userMessage, uiContext, imageBase64) {
+    async sendMessage(userMessage, uiContext, imageBase64, model = 'google/gemini-3-flash-preview') {
         if (!this.isInitialized) {
             throw new Error('VisorAgent not initialized. Call init() first.');
         }
 
         // Construct the message payload using message history and user input
-        // OpenRouter doesn't support system messages or content arrays, so we need to format differently
-        const formattedHistory = this.chatHistory
-            .filter(msg => msg.role !== 'system') // Remove system messages
-            .map(msg => ({
-                role: msg.role,
-                content: typeof msg.content === 'string' ? msg.content : String(msg.content)
-            }));
-
-        // Build messages array - prepend system prompt to first message if needed
-        const messages = [];
+        const messages = [...this.chatHistory];
         
-        // Add conversation history
-        messages.push(...formattedHistory);
+        // Format all content as strings
+        messages.forEach(msg => {
+            if (typeof msg.content !== 'string') {
+                msg.content = String(msg.content);
+            }
+        });
         
-        // For OpenRouter, we can't send images in content array, so we'll just send text
-        // Include system prompt in first message if this is the first user message
-        const isFirstUserMessage = formattedHistory.length === 0;
-        const userContent = isFirstUserMessage && this.systemPrompt
-            ? `${this.systemPrompt}\n\nParsed UI Elements:\n${uiContext}\n\nUser Query:\n${userMessage}\n\n[Note: Screenshot available but not included due to API limitations]`
-            : `Parsed UI Elements:\n${uiContext}\n\nUser Query:\n${userMessage}`;
-        
+        // Add current user message
+        const userContent = `Parsed UI Elements:\n${uiContext}\n\nUser Query:\n${userMessage}`;
         messages.push({
             role: 'user',
             content: userContent
         });
 
-        // Call the API via Electron IPC
-        const result = await window.electronAPI.chatCompletion(messages);
+        // Call the API via Electron IPC with selected model
+        const result = await window.electronAPI.chatCompletion(messages, model);
 
         if (!result.success) {
             throw new Error(result.error || 'API call failed');
@@ -101,21 +92,11 @@ class VisorAgent {
             throw new Error('API response is empty or invalid');
         }
 
-        // Handle both string and object responses
-        let parsedResponse;
-        if (typeof result.response === 'string') {
-            const cleanJson = result.response.replace(/```json\n?|```/g, '').trim();
-            parsedResponse = JSON.parse(cleanJson);
-        } else if (typeof result.response === 'object') {
-            // Response is already an object
-            parsedResponse = result.response;
-        } else {
-            throw new Error('Invalid response format');
-        }
+        const cleanJson = result.response.replace(/```json\n?|```/g, '').trim();
+        const parsedResponse = JSON.parse(cleanJson);
 
         // Add to history (store user message as text, response as text)
         this.addToHistory('user', userMessage);
-        this.addToHistory('assistant', parsedResponse.reply || '');
 
         return parsedResponse;
     }

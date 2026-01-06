@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self' https://api.openai.com"
+      content="default-src 'self'; script-src 'self'; connect-src 'self' https://api.openai.com; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
     />
     <title>Visor Chat</title>
     <link rel="stylesheet" href="chat.css">
@@ -24,10 +24,13 @@
           <input type="text" id="messageInput" placeholder="Loading agent..." />
           
           <div class="input-actions">
-            <div class="model-selector">
-              <span>Visor 1.0</span>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-            </div>
+            <select id="modelSelector" class="model-selector" title="Select AI model">
+              <option value="google/gemini-3-flash-preview">Gemini 3 Flash</option>
+              <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+              <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
+              <option value="openai/gpt-4o">GPT-4o</option>
+              <option value="meta-llama/llama-3.1-70b-instruct">Llama 3.1 70B</option>
+            </select>
             
             <button id="sendButton">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
