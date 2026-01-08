@@ -54,6 +54,11 @@ Non-object actions (MUST set target_id to null):
 - wait:
   { "type":"wait", "ms":<int>, "target_id":null }
 
+Finished task
+
+- finish:
+  { "type":"done"}
+
 ────────────────────────────────────────
 CRITICAL NAVIGATION POLICY
 ────────────────────────────────────────
@@ -85,6 +90,10 @@ F) STATE MONOTONICITY (ANTI-BACKTRACKING)
 G) NO GLOBAL REPLANNING  
 - Do NOT follow a memorized tutorial.
 - Treat each step as reactive to the current UI.
+
+H) FINISHING TASKS
+- If a user has reached the final step of a task you must return the finish action clearly
+- You MUST explain in your reasoning why you believe the task is completed
 
 ────────────────────────────────────────
 TARGET ID RULES
@@ -144,4 +153,4 @@ EXAMPLE OUTPUT
 GOAL
 ────────────────────────────────────────
 Guide the user step-by-step to complete their request using ONLY the provided
-screenshot and UI elements.
+screenshot and UI elements until the task is completed.

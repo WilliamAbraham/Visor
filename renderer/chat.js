@@ -73,26 +73,56 @@ async function captureScreenshot() {
     }
 }
 
-async function sendMessage() {
-    var start = Date.now();
-    const message = messageInput.value.trim();
-    if (!message) return;
+/*
+    sendMessage function
+    1. add user message to UI immediately and clear input field
+    2. show loading indicator
+    3. capture screenshot
+    4. parse screenshot with FastAPI server
+    5. call agent with message, UI context, screenshot, and model
+    6. hide loading indicator
+    7. process agent response
+    8. highlight element if specified
+    9. add agent response to UI
+*/
 
-    // On first message, exit welcome mode
+/*
+    Need to impliment a loop
+*/
+
+function exitWelcomeMode() {
     if (isFirstMessage) {
         chatContainer.classList.remove('welcome-mode');
-        // Hide welcome message
         const welcomeMsg = document.querySelector('.message.welcome');
-        if (welcomeMsg) {
-            welcomeMsg.style.display = 'none';
-        }
+        if (welcomeMsg) welcomeMsg.style.display = 'none';
         isFirstMessage = false;
     }
+}
+
+async function sendMessage() {
+    const start = Date.now();
+    const message = messageInput.value.trim();
+    if (!message){
+        console.log('No message entered');
+        return;
+    }
+
+    exitWelcomeMode();
 
     // Add user message to UI immediately and clear input field
     addMessage(message, 'user');
     messageInput.value = '';
 
+    await triggerNextStep(message);
+    
+    const end = Date.now();
+    console.log('Time taken:', end - start, 'ms');
+}
+
+async function triggerNextStep(message="Assume the user completed the previous step. What's next?") {
+    exitWelcomeMode();
+    console.log('Triggering next step with message:', message);
+    let completedTask = false;
     // Show loading indicator before LLM call
     showLoadingIndicator();
 
@@ -108,6 +138,7 @@ async function sendMessage() {
         try {
             const result = await window.electronAPI.parseScreenshot(screenshot);
             if (result.success) {
+                console.log('Parsed screenshot:', result.parsedContent);
                 // Filter content to only include interactive icons
                 const filteredContent = result.parsedContent.filter(item => 
                     item.type === 'icon' && item.interactivity
@@ -118,20 +149,24 @@ async function sendMessage() {
                     //`ID: ${i} | Type: ${item.type} | Content: ${item.content} | Interactivity: ${item.interactivity}"`
                     `ID: ${i} | Content: ${item.content}"`
                 ).join('\n');
+                console.log('UI context:', uiContext);
 
                 currentImageBase64 = result.imageBase64;
                 boundingBoxes = getAllBoundingBoxes(filteredContent);
             } else {
                 console.error('Parse failed:', result.error);
+                hideLoadingIndicator();
                 addMessage(`Error: ${result.error}`, 'system');
                 return
             }
         } catch (error) {
             console.error('Error parsing screenshot:', error);
+            hideLoadingIndicator();
             addMessage(`Error parsing: ${error.message}`, 'system');
             return
         }
     } else {
+        hideLoadingIndicator();
         addMessage('Error: Failed to take screenshot', 'system');
         return
     }
@@ -143,9 +178,6 @@ async function sendMessage() {
     try {
         const response = await agent.sendMessage(message, uiContext, currentImageBase64, selectedModel);
         console.log('Agent response:', response);
-        
-        // Hide loading indicator
-        hideLoadingIndicator();
         
         if (!response.output || !Array.isArray(response.output)) {
             throw new Error('Invalid response format: missing output array');
@@ -170,6 +202,8 @@ async function sendMessage() {
                 if (item.action && item.action.type === 'click' && item.action.target_id) {
                     targetId = item.action.target_id;
                     console.log('Action: click on', targetId, 'button:', item.action.button || 'left');
+                } else if (item.action && item.action.type === 'finish') {
+                    completedTask = true;
                 }
             }
             
@@ -182,12 +216,17 @@ async function sendMessage() {
         }
         console.log('Message text:', messageText);
 
-        addMessage(messageText, 'system');
-        agent.addToHistory('assistant', messageText);
-        
-        // Highlight element if specified
-        if (targetId && boundingBoxes) {
-            await highlightElement(targetId, boundingBoxes);
+        hideLoadingIndicator();
+        if (!completedTask) {
+            // Highlight element if specified
+            if (targetId && boundingBoxes) {
+                await highlightElement(targetId, boundingBoxes);
+            }
+
+            addMessage(messageText, 'system');
+            agent.addToHistory('assistant', messageText);
+        } else {
+            addMessage('Task completed', 'system');
         }
         
     } catch (error) {
@@ -196,8 +235,6 @@ async function sendMessage() {
         console.error('Error:', error);
         addMessage(`Error: ${error.message}`, 'system');
     }
-    var end = Date.now();
-    console.log('Time taken:', end - start, 'ms');
 }
 
 async function highlightElement(targetId, boundingBoxes) {
@@ -226,6 +263,13 @@ function getAllBoundingBoxes(parsedContent) {
             .map(item => item.bbox);   // Return the [x,y,w,h] array
     }
     return [];
+}
+
+// Listen for main-initiated triggerNextStep calls
+if (window.electronAPI && window.electronAPI.onTriggerNextStep) {
+    window.electronAPI.onTriggerNextStep((msg) => {
+        triggerNextStep(msg);
+    });
 }
 
 // Event listeners

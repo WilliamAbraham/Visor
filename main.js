@@ -28,6 +28,7 @@ const openRouter = new OpenRouter({
 
 let isParsingScreenshot = false
 let overlayWin = null
+let chatWin = null
 let activeRect = null // Track active rectangle {x, y, width, height}
 
 // Start global input hook
@@ -35,12 +36,20 @@ uIOhook.on('mousedown', (e) => {
   if (activeRect) {
     const { x, y } = e
     // Check if click is inside active rectangle
+    /*
+        This will be the foundation for the loop logic, 
+    */
     if (x >= activeRect.x && x <= activeRect.x + activeRect.width &&
         y >= activeRect.y && y <= activeRect.y + activeRect.height) {
       
-      // Clicked inside! Clear rectangle
+      // Clicked inside! Clear rectangle and trigger next step
       if (overlayWin) {
         overlayWin.webContents.send('draw-rectangle', []) // Send empty to clear
+        setTimeout(() => {
+          if (chatWin) {
+            chatWin.webContents.send('trigger-next-step');
+          }
+        }, 1000);
         activeRect = null
       }
     }
@@ -66,6 +75,13 @@ ipcMain.handle('chat-completion', async (event, messages, model='google/gemini-3
     // Return the content as-is (could be string or object)
     return { success: true, response: content };
 })
+
+// Allow main to trigger renderer's next step
+ipcMain.on('trigger-next-step', (_event) => {
+  if (chatWin) {
+    chatWin.webContents.send('trigger-next-step');
+  }
+});
 
 // Handle screenshot taking
 ipcMain.handle('take-screenshot', async (event) => {
@@ -237,7 +253,7 @@ const createChatWindow = () => {
   const primaryDisplay = screen.getPrimaryDisplay()
   const { width, height, x, y } = primaryDisplay.bounds
 
-  const chatWin = new BrowserWindow({
+  chatWin = new BrowserWindow({
     width: 400,
     height: 600,
     x: x + width - 420, // Position on right side of primary display
