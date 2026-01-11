@@ -3,9 +3,11 @@ const sendButton = document.getElementById('sendButton');
 const messagesContainer = document.getElementById('messages');
 const chatContainer = document.querySelector('.chat-container');
 const modelSelector = document.getElementById('modelSelector');
+// const getHistoryButton = document.getElementById('getHistory');
 
 // Available models
 const availableModels = [
+    { value: 'openrouter/auto', label: 'Auto' },
     { value: 'google/gemini-3-flash-preview', label: 'Gemini 3 Flash' },
     { value: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet' },
     { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
@@ -73,6 +75,36 @@ async function captureScreenshot() {
     }
 }
 
+/**
+ * Clean and organize UI context data for LLM consumption
+ * - Preserves original element IDs
+ * - Sorts elements with interactivity=true first
+ * - Formats as string with consistent structure
+ * 
+ * @param {Array} parsedContent - Array of UI elements from screenshot parser
+ * @returns {string} Formatted UI context string with interactable elements first
+ */
+function cleanUIContext(parsedContent) {
+    // Add original index to each item before sorting
+    const indexedContent = parsedContent.map((item, i) => ({
+        ...item,
+        originalIndex: i
+    }));
+
+    // Sort: interactable elements first, then non-interactable
+    const sortedContent = [...indexedContent].sort((a, b) => {
+        if (a.interactivity === b.interactivity) return 0;
+        return a.interactivity ? -1 : 1;
+    });
+
+    // Construct UI context string for LLM with original IDs preserved
+    const uiContext = sortedContent.map((item) => 
+        `ID: ${item.originalIndex} | Type: ${item.type} | Content: ${item.content} | Interactivity: ${item.interactivity}"`
+    ).join('\n');
+
+    return uiContext;
+}
+
 /*
     sendMessage function
     1. add user message to UI immediately and clear input field
@@ -119,7 +151,12 @@ async function sendMessage() {
     console.log('Time taken:', end - start, 'ms');
 }
 
-async function triggerNextStep(message="Assume the user completed the previous step. What's next?") {
+async function triggerNextStep(message=null) {
+    if (message === null){
+        // const history = agent.getFullHistory();
+        // message = history[history.length - 1].content;
+        message = "The user completed the previous step. Is the task completed? If not, what's next? DO NOT REPEAT STEPS."
+    }
     exitWelcomeMode();
     console.log('Triggering next step with message:', message);
     let completedTask = false;
@@ -138,17 +175,10 @@ async function triggerNextStep(message="Assume the user completed the previous s
         try {
             const result = await window.electronAPI.parseScreenshot(screenshot);
             if (result.success) {
-                console.log('Parsed screenshot:', result.parsedContent);
-                // Filter content to only include interactive icons
-                const filteredContent = result.parsedContent.filter(item => 
-                    item.type === 'icon' && item.interactivity
-                );
+                const filteredContent = result.parsedContent;
 
-                // Construct UI context string for LLM
-                uiContext = filteredContent.map((item, i) => 
-                    //`ID: ${i} | Type: ${item.type} | Content: ${item.content} | Interactivity: ${item.interactivity}"`
-                    `ID: ${i} | Content: ${item.content}"`
-                ).join('\n');
+                // Clean and organize UI context (interactable elements first, IDs preserved)
+                uiContext = cleanUIContext(filteredContent);
                 console.log('UI context:', uiContext);
 
                 currentImageBase64 = result.imageBase64;
@@ -202,7 +232,7 @@ async function triggerNextStep(message="Assume the user completed the previous s
                 if (item.action && item.action.type === 'click' && item.action.target_id) {
                     targetId = item.action.target_id;
                     console.log('Action: click on', targetId, 'button:', item.action.button || 'left');
-                } else if (item.action && item.action.type === 'finish') {
+                } else if (item.action && item.action.type === 'done') {
                     completedTask = true;
                 }
             }
@@ -224,7 +254,6 @@ async function triggerNextStep(message="Assume the user completed the previous s
             }
 
             addMessage(messageText, 'system');
-            agent.addToHistory('assistant', messageText);
         } else {
             addMessage('Task completed', 'system');
         }
@@ -265,6 +294,11 @@ function getAllBoundingBoxes(parsedContent) {
     return [];
 }
 
+// function getHistory() {
+//     console.log('Getting history');
+//     console.log(agent.getHistorySummary());
+// }
+
 // Listen for main-initiated triggerNextStep calls
 if (window.electronAPI && window.electronAPI.onTriggerNextStep) {
     window.electronAPI.onTriggerNextStep((msg) => {
@@ -277,6 +311,7 @@ sendButton.addEventListener('click', sendMessage);
 messageInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') sendMessage();
 });
+// getHistoryButton.addEventListener('click', getHistory);
 
 // Display welcome message
 const welcomeDiv = document.createElement('div');

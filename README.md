@@ -4,6 +4,14 @@ Powered by Microsoft's OmniParser, a UI element extraction tool, Visor is a **hu
 computer use tool. Providing visual cues, glowing rectangles, Visor directs users on how to navigate
 their desktop based on prompts.
 
+## Demo
+
+🎥 **Watch Visor in Action**: https://www.youtube.com/watch?v=NlwcRJeW6jE
+
+<!-- Example:
+[![Visor Demo](https://img.youtube.com/vi/YOUR_VIDEO_ID/0.jpg)](https://www.youtube.com/watch?v=YOUR_VIDEO_ID)
+-->
+
 ## Features
 - **Visual Understanding**: Analyzes your screen to understand what you're looking at.
 - **Smart Highlighting**: Highlights UI elements to guide you through tasks.

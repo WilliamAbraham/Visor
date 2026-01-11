@@ -1,3 +1,5 @@
+let useScreenshot = true;
+
 class VisorAgent {
     constructor() {
         this.systemPrompt = '';
@@ -5,9 +7,6 @@ class VisorAgent {
         this.isInitialized = false;
     }
 
-    /*
-      Initialize the agent by loading and sending the system prompt
-    */
     async init() {
         if (this.isInitialized) {
             console.warn('VisorAgent already initialized');
@@ -29,23 +28,14 @@ class VisorAgent {
         }
     }
 
-    /*
-       Add a message to chat history
-    */
     addToHistory(role, content) {
         this.chatHistory.push({ role, content });
     }
 
-    /*
-       Clear chat history
-    */
     clearHistory() {
         this.chatHistory = [];
     }
 
-    /*
-       Get the full chat history (already includes system prompt from init)
-    */
     getFullHistory() {
         return this.chatHistory;
     }
@@ -63,22 +53,68 @@ class VisorAgent {
             throw new Error('VisorAgent not initialized. Call init() first.');
         }
 
-        // Construct the message payload using message history and user input
-        const messages = [...this.chatHistory.slice(-10)];
+        // Construct messages array with 3 components:
+        // 1. System prompt (from chatHistory[0])
+        // 2. UI Context as a separate user message
+        // 3. Chat history (previous conversation)
+        // 4. Current user message
         
-        // Format all content as strings
-        messages.forEach(msg => {
-            if (typeof msg.content !== 'string') {
-                msg.content = String(msg.content);
-            }
-        });
+        const messages = [];
         
-        // Add current user message
-        const userContent = `Parsed UI Elements:\n${uiContext}\n\nUser Query:\n${userMessage}`;
-        messages.push({
-            role: 'user',
-            content: userContent
-        });
+        // 1. Add system prompt (first item in chatHistory)
+        if (this.chatHistory.length > 0 && this.chatHistory[0].role === 'system') {
+            messages.push({
+                role: 'system',
+                content: this.chatHistory[0].content
+            });
+        }
+        
+        // 2. Add UI context as separate user message
+        if (uiContext) {
+            messages.push({
+                role: 'user',
+                content: `[UI Context]\nCurrent UI Elements:\n${uiContext}`
+            });
+        }
+        
+        // 3. Add chat history (skip system prompt, get last 10 exchanges)
+        const history = this.chatHistory.slice(1).slice(-10);
+        if (history.length > 0) {
+            history.forEach(msg => {
+                messages.push({
+                    role: msg.role,
+                    content: typeof msg.content === 'string' ? msg.content : String(msg.content)
+                });
+            });
+        }
+        
+        // 4. Add current user message with optional screenshot
+        if (useScreenshot && imageBase64) {
+            // Multimodal message with text and image
+            messages.push({
+                role: 'user',
+                content: [
+                    { 
+                        type: 'text', 
+                        text: `[User Query]\n${userMessage}`
+                    },
+                    { 
+                        type: 'image_url', 
+                        imageUrl: {
+                            url: `data:image/png;base64,${imageBase64}`
+                        }
+                    }
+                ]
+            });
+        } else {
+            // Text-only user message
+            messages.push({
+                role: 'user',
+                content: `[User Query]\n${userMessage}`
+            });
+        }
+
+        console.log('Messages:', messages);
 
         // Call the API via Electron IPC with selected model
         const result = await window.electronAPI.chatCompletion(messages, model);
@@ -95,8 +131,12 @@ class VisorAgent {
         const cleanJson = result.response.replace(/```json\n?|```/g, '').trim();
         const parsedResponse = JSON.parse(cleanJson);
 
+        const stringifiedResponse = JSON.stringify(parsedResponse);
+
         // Add to history (store user message as text, response as text)
         this.addToHistory('user', userMessage);
+
+        this.addToHistory('assistant', stringifiedResponse);
 
         return parsedResponse;
     }
