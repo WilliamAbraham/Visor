@@ -52,7 +52,12 @@ async def parse_screenshot(image_base64: str = Body(...)):
         output_filepath = os.path.join(OUTPUT_DIR, output_filename)
         image.save(output_filepath)
 
-        return {"success": True, "parsed_content": parsed_content_list}
+        # Convert image to base64
+        img_buffer = io.BytesIO()
+        image.save(img_buffer, format='PNG')
+        img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
+
+        return {"success": True, "parsed_content": parsed_content_list, "image_base64": img_base64}
     except Exception as e:
         print(f"Error processing image: {e}")
         return {"success": False, "error": str(e)}
