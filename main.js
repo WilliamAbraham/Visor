@@ -147,7 +147,12 @@ ipcMain.handle('parse-screenshot', async (event, filename) => {
           try {
             const result = JSON.parse(data)
             if (response.statusCode === 200 && result.success) {
-              resolve({ success: true, parsedContent: result.parsed_content, imageBase64: imageBase64 })
+              resolve({ 
+                success: true, 
+                parsedContent: result.parsed_content, 
+                imageBase64: imageBase64,
+                labeledImageBase64: result.image_base64  // Labeled image from server
+              })
             } else {
               reject(new Error(result.error || `Server error: ${response.statusCode}`))
             }
@@ -175,6 +180,70 @@ ipcMain.handle('parse-screenshot', async (event, filename) => {
   } catch (error) {
     isParsingScreenshot = false
     console.error('Parse screenshot error:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// Handle saving labeled screenshot
+ipcMain.handle('save-labeled-screenshot', async (event, imageBase64) => {
+  try {
+    const labeledDir = path.join(__dirname, 'data', 'labeled_screenshots')
+    
+    // Create directory if it doesn't exist
+    if (!fs.existsSync(labeledDir)) {
+      fs.mkdirSync(labeledDir, { recursive: true })
+    }
+    
+    // Generate filename with timestamp
+    const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\./g, '-')
+    const filename = `screenshot-${timestamp}.png`
+    const filepath = path.join(labeledDir, filename)
+    
+    // Convert base64 to buffer and save
+    const imageBuffer = Buffer.from(imageBase64, 'base64')
+    fs.writeFileSync(filepath, imageBuffer)
+    
+    console.log('Labeled screenshot saved:', filename)
+    return { success: true, filename: filename, path: filepath }
+  } catch (error) {
+    console.error('Error saving labeled screenshot:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// Handle clearing screenshot directories
+ipcMain.handle('clear-screenshot-directories', async (event) => {
+  try {
+    const screenshotsDir = path.join(__dirname, 'data', 'screenshots')
+    const labeledScreenshotsDir = path.join(__dirname, 'data', 'labeled_screenshots')
+    
+    // Clear screenshots directory
+    if (fs.existsSync(screenshotsDir)) {
+      const files = fs.readdirSync(screenshotsDir)
+      files.forEach(file => {
+        const filepath = path.join(screenshotsDir, file)
+        if (fs.statSync(filepath).isFile()) {
+          fs.unlinkSync(filepath)
+        }
+      })
+      console.log('Cleared screenshots directory')
+    }
+    
+    // Clear labeled_screenshots directory
+    if (fs.existsSync(labeledScreenshotsDir)) {
+      const files = fs.readdirSync(labeledScreenshotsDir)
+      files.forEach(file => {
+        const filepath = path.join(labeledScreenshotsDir, file)
+        if (fs.statSync(filepath).isFile()) {
+          fs.unlinkSync(filepath)
+        }
+      })
+      console.log('Cleared labeled_screenshots directory')
+    }
+    
+    return { success: true }
+  } catch (error) {
+    console.error('Error clearing screenshot directories:', error)
     return { success: false, error: error.message }
   }
 })

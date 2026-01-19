@@ -15,6 +15,8 @@ const availableModels = [
     { value: 'meta-llama/llama-3.1-70b-instruct', label: 'Llama 3.1 70B' }
 ];
 
+let numOfScreenshots = 0;
+
 // Track if first message has been sent
 let isFirstMessage = true;
 
@@ -76,51 +78,42 @@ async function captureScreenshot() {
 }
 
 /**
- * Clean and organize UI context data for LLM consumption
- * - Preserves original element IDs
- * - Sorts elements with interactivity=true first
- * - Formats as string with consistent structure
- * 
+ * Clean and organize UI context data for LLM consumption (OmniParser-style).
+ * - Preserves enumerate-order IDs (idx) to stay aligned with the labeled overlay image numbering
+ * - Does NOT sort or reindex
+ * - Formats elements as HTML-ish tags ("screen_info")
+ *
  * @param {Array} parsedContent - Array of UI elements from screenshot parser
- * @returns {string} Formatted UI context string with interactable elements first
+ * @returns {string} Formatted UI context string
  */
 function cleanUIContext(parsedContent) {
-    // Add original index to each item before sorting
-    const indexedContent = parsedContent.map((item, i) => ({
-        ...item,
-        originalIndex: i
-    }));
+    if (!Array.isArray(parsedContent) || parsedContent.length === 0) return '';
 
-    // Sort: interactable elements first, then non-interactable
-    const sortedContent = [...indexedContent].sort((a, b) => {
-        if (a.interactivity === b.interactivity) return 0;
-        return a.interactivity ? -1 : 1;
-    });
+    // Minimal escaping to keep the alt attribute valid
+    const escapeAlt = (s) => {
+        if (s === null || s === undefined) return '';
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .trim();
+    };
 
-    // Construct UI context string for LLM with original IDs preserved
-    const uiContext = sortedContent.map((item) => 
-        `ID: ${item.originalIndex} | Type: ${item.type} | Content: ${item.content} | Interactivity: ${item.interactivity}"`
-    ).join('\n');
+    return parsedContent.map((element, idx) => {
+        const type = (element?.type || '').toLowerCase();
+        const content = escapeAlt(element?.content ?? '');
+        const interactive = element?.interactivity === true ? 'true' : 'false';
 
-    return uiContext;
+        // OmniParser-style tags
+        if (type === 'text') {
+            return `<p id=${idx} class="text" alt="${content}" data-interactive="${interactive}"> </p>`;
+        }
+
+        // Default everything else (including "icon") to icon-style
+        return `<img id=${idx} class="icon" alt="${content}" data-interactive="${interactive}"> </img>`;
+    }).join('\n');
 }
-
-/*
-    sendMessage function
-    1. add user message to UI immediately and clear input field
-    2. show loading indicator
-    3. capture screenshot
-    4. parse screenshot with FastAPI server
-    5. call agent with message, UI context, screenshot, and model
-    6. hide loading indicator
-    7. process agent response
-    8. highlight element if specified
-    9. add agent response to UI
-*/
-
-/*
-    Need to impliment a loop
-*/
 
 function exitWelcomeMode() {
     if (isFirstMessage) {
@@ -128,6 +121,22 @@ function exitWelcomeMode() {
         const welcomeMsg = document.querySelector('.message.welcome');
         if (welcomeMsg) welcomeMsg.style.display = 'none';
         isFirstMessage = false;
+    }
+}
+
+async function clearScreenshots(){
+    if (numOfScreenshots >= 5){
+        try {
+            const result = await window.electronAPI.clearScreenshotDirectories();
+            if (result.success) {
+                numOfScreenshots = 0;
+                console.log('Screenshot directories cleared successfully');
+            } else {
+                console.error('Failed to clear screenshot directories:', result.error);
+            }
+        } catch (error) {
+            console.error('Error clearing screenshot directories:', error);
+        }
     }
 }
 
@@ -155,7 +164,7 @@ async function triggerNextStep(message=null) {
     if (message === null){
         // const history = agent.getFullHistory();
         // message = history[history.length - 1].content;
-        message = "The user completed the previous step. Is the task completed? If not, what's next? DO NOT REPEAT STEPS."
+        message = "The user completed the previous step. Is the task completed? If not, what's next? DO NOT REPEAT STEPS.";
     }
     exitWelcomeMode();
     console.log('Triggering next step with message:', message);
@@ -164,9 +173,11 @@ async function triggerNextStep(message=null) {
     showLoadingIndicator();
 
     const screenshot = await captureScreenshot();
+    numOfScreenshots += 1;
 
     // Initilize variables for llm api call
     let currentImageBase64 = null;
+    let labeledImageBase64 = null;
     let uiContext = "";
     let boundingBoxes = [];
 
@@ -176,29 +187,41 @@ async function triggerNextStep(message=null) {
             const result = await window.electronAPI.parseScreenshot(screenshot);
             if (result.success) {
                 const filteredContent = result.parsedContent;
+                labeledImageBase64 = result.labeledImageBase64;
 
-                // Clean and organize UI context (interactable elements first, IDs preserved)
+                // Save labeled screenshot to data/labeled_screenshots
+                if (labeledImageBase64) {
+                    window.electronAPI.saveLabeledScreenshot(labeledImageBase64)
+                        .then(saveResult => {
+                            if (saveResult.success) {
+                                console.log('Labeled screenshot saved:', saveResult.filename);
+                            } else {
+                                console.error('Failed to save labeled screenshot:', saveResult.error);
+                            }
+                        })
+                        .catch(error => console.error('Error saving labeled screenshot:', error));
+                }
+
+                // Clean and organize UI context (OmniParser-style, no sorting)
                 uiContext = cleanUIContext(filteredContent);
                 console.log('UI context:', uiContext);
 
                 currentImageBase64 = result.imageBase64;
                 boundingBoxes = getAllBoundingBoxes(filteredContent);
             } else {
-                console.error('Parse failed:', result.error);
                 hideLoadingIndicator();
                 addMessage(`Error: ${result.error}`, 'system');
-                return
+                return;
             }
         } catch (error) {
-            console.error('Error parsing screenshot:', error);
             hideLoadingIndicator();
             addMessage(`Error parsing: ${error.message}`, 'system');
-            return
+            return;
         }
     } else {
         hideLoadingIndicator();
         addMessage('Error: Failed to take screenshot', 'system');
-        return
+        return;
     }
 
     // Get selected model
@@ -206,7 +229,13 @@ async function triggerNextStep(message=null) {
     
     // Call agent with message, UI context, screenshot, and model
     try {
-        const response = await agent.sendMessage(message, uiContext, currentImageBase64, selectedModel);
+        const response = await agent.sendMessage(
+            message, 
+            uiContext, 
+            currentImageBase64, 
+            labeledImageBase64, 
+            selectedModel
+        );
         console.log('Agent response:', response);
         
         if (!response.output || !Array.isArray(response.output)) {

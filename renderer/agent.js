@@ -48,7 +48,7 @@ class VisorAgent {
        @param {string} model - Model to use (optional)
        @returns {Promise<Object>} - The parsed JSON response from the agent
      */
-    async sendMessage(userMessage, uiContext, imageBase64, model = 'google/gemini-3-flash-preview') {
+    async sendMessage(userMessage, uiContext, imageBase64, labeledImageBase64, model = 'google/gemini-3-flash-preview') {
         if (!this.isInitialized) {
             throw new Error('VisorAgent not initialized. Call init() first.');
         }
@@ -73,7 +73,7 @@ class VisorAgent {
         if (uiContext) {
             messages.push({
                 role: 'user',
-                content: `[UI Context]\nCurrent UI Elements:\n${uiContext}`
+                content: `[UI Context]\nHere is the list of detected UI elements by id and description:\n${uiContext}`
             });
         }
         
@@ -88,29 +88,56 @@ class VisorAgent {
             });
         }
         
-        // 4. Add current user message with optional screenshot
+        // 4. Add current user message with optional screenshot(s)
         if (useScreenshot && imageBase64) {
-            // Multimodal message with text and image
+            // Multimodal message with text + 1 or 2 images (raw + labeled overlay)
+            const contentParts = [
+                {
+                    type: 'text',
+                    text:
+                        `[User Query]\n${userMessage}\n\n` +
+                        `You will see TWO images (if provided):\n` +
+                        `- Image 1: original screenshot\n` +
+                        `- Image 2: screenshot with numbered boxes (IDs).\n` +
+                        `When choosing a click target, the target_id MUST match the number on Image 2 (labeled overlay).`
+                },
+                {
+                    type: 'image_url',
+                    imageUrl: {
+                        url: `data:image/png;base64,${imageBase64}`
+                    }
+                }
+            ];
+
+            // Add labeled overlay image if available
+            if (labeledImageBase64) {
+                contentParts.push({
+                    type: 'image_url',
+                    imageUrl: {
+                        url: `data:image/png;base64,${labeledImageBase64}`
+                    }
+                });
+            }
+
+            // If you want to mirror OmniParser more closely, include UI context in the same text block too.
+            // We keep the existing separate UI-context message above, but also append it here for clarity.
+            if (uiContext) {
+                contentParts[0].text += `\n\n[UI Context]\nHere is the list of detected UI elements by id and description:\n${uiContext}`;
+            }
+
             messages.push({
                 role: 'user',
-                content: [
-                    { 
-                        type: 'text', 
-                        text: `[User Query]\n${userMessage}`
-                    },
-                    { 
-                        type: 'image_url', 
-                        imageUrl: {
-                            url: `data:image/png;base64,${imageBase64}`
-                        }
-                    }
-                ]
+                content: contentParts
             });
         } else {
             // Text-only user message
+            const textOnly = uiContext
+                ? `[User Query]\n${userMessage}\n\n[UI Context]\nHere is the list of detected UI elements by id and description:\n${uiContext}`
+                : `[User Query]\n${userMessage}`;
+
             messages.push({
                 role: 'user',
-                content: `[User Query]\n${userMessage}`
+                content: textOnly
             });
         }
 
@@ -203,4 +230,3 @@ class validationAgent {
         return this.chatHistory;
     }
 }
-
