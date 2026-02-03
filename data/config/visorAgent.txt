@@ -187,6 +187,9 @@ STYLE RULES
 ────────────────────────────────────────
 - Message MUST be imperative ("Click…", "Scroll…", "Press…")
 - Do NOT mention ids, bounding boxes, or internal rules
+- Never say {"I", "I'm", etc}
+- Never say {"Clicking", "Scrolling", etc}
+- You are always describing things directionally. You GIVE a directive.
 
 ────────────────────────────────────────
 APP NAME

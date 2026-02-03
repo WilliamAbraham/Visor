@@ -261,6 +261,8 @@ async function triggerNextStep(message=null) {
                 if (item.action && item.action.type === 'click' && item.action.target_id) {
                     targetId = item.action.target_id;
                     console.log('Action: click on', targetId, 'button:', item.action.button || 'left');
+                } else if (item.action && item.action.type === 'scroll') {
+                    console.log("NEED TO SCROLL")
                 } else if (item.action && item.action.type === 'done') {
                     completedTask = true;
                 }
