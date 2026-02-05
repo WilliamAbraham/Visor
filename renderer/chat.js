@@ -3,6 +3,7 @@ const sendButton = document.getElementById('sendButton');
 const messagesContainer = document.getElementById('messages');
 const chatContainer = document.querySelector('.chat-container');
 const modelSelector = document.getElementById('modelSelector');
+const testCursorBtn = document.getElementById('testCursorBtn');
 // const getHistoryButton = document.getElementById('getHistory');
 
 // Available models
@@ -343,6 +344,17 @@ messageInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') sendMessage();
 });
 // getHistoryButton.addEventListener('click', getHistory);
+
+// DEV: Test cursor button - spawns cursor at center of screen
+testCursorBtn.addEventListener('click', () => {
+    const rect = {
+        x: window.screen.width / 2 - 50,
+        y: window.screen.height / 2 - 50,
+        width: 100,
+        height: 100
+    };
+    window.electronAPI.sendDrawRectangle(rect);
+});
 
 // Display welcome message
 const welcomeDiv = document.createElement('div');

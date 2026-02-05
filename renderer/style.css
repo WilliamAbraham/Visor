@@ -12,46 +12,81 @@ body {
     pointer-events: none; /* Make body click-through */
 }
 
-.rectangle {
+/* Click indicator container - invisible hitbox for click detection */
+.click-indicator {
     position: absolute;
-    background-color: rgba(59, 130, 246, 0.1); /* Slight blue tint */
-    border: 3px solid rgb(59, 130, 246);
-    border-radius: 8px;
-    pointer-events: auto; /* Make rectangles clickable */
+    pointer-events: auto; /* Make clickable */
     z-index: 1000;
     cursor: pointer;
-    transition: all 0.2s ease;
-    
-    /* Glowing effect */
-    box-shadow: 
-        0 0 15px rgba(59, 130, 246, 0.6),
-        0 0 30px rgba(59, 130, 246, 0.4),
-        inset 0 0 15px rgba(59, 130, 246, 0.1);
-    
-    /* Pulsing animation */
-    animation: pulse 2s ease-in-out infinite;
+    /* No visible border/background - just a hitbox */
 }
 
-@keyframes pulse {
+/* The cursor image */
+.cursor-image {
+    position: absolute;
+    width: 60px;
+    height: auto;
+    pointer-events: none; /* Clicks pass through to container */
+    
+    /* Smooth entrance animation */
+    animation: cursorBounce 1.2s ease-in-out infinite, cursorFadeIn 0.3s ease-out;
+    
+    /* Drop shadow for visibility on any background */
+    filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.8))
+            drop-shadow(0 0 20px rgba(59, 130, 246, 0.5));
+}
+
+/* Bouncing animation to draw attention */
+@keyframes cursorBounce {
     0%, 100% {
-        box-shadow: 
-            0 0 15px rgba(59, 130, 246, 0.6),
-            0 0 30px rgba(59, 130, 246, 0.4),
-            inset 0 0 15px rgba(59, 130, 246, 0.1);
+        transform: translateY(0) scale(1);
     }
     50% {
-        box-shadow: 
-            0 0 25px rgba(59, 130, 246, 0.8),
-            0 0 50px rgba(59, 130, 246, 0.6),
-            inset 0 0 20px rgba(59, 130, 246, 0.2);
+        transform: translateY(-8px) scale(1.05);
     }
 }
-.rectangle:hover {
-    background-color: rgba(59, 130, 246, 0.2);
-    border-width: 4px;
-    box-shadow: 
-        0 0 30px rgba(59, 130, 246, 1),
-        0 0 60px rgba(59, 130, 246, 0.8),
-        inset 0 0 20px rgba(59, 130, 246, 0.3);
+
+/* Fade in when appearing */
+@keyframes cursorFadeIn {
+    0% {
+        opacity: 0;
+        transform: scale(0.5) translateY(20px);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+/* Hover effect on the hitbox */
+.click-indicator:hover .cursor-image {
+    filter: drop-shadow(0 0 12px rgba(59, 130, 246, 1))
+            drop-shadow(0 0 30px rgba(59, 130, 246, 0.8));
+    animation: cursorBounce 0.6s ease-in-out infinite;
+}
+
+/* Optional: subtle ring pulse at click point */
+.click-indicator::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 30px;
+    height: 30px;
+    border: 2px solid rgba(59, 130, 246, 0.6);
+    border-radius: 50%;
+    animation: ringPulse 1.5s ease-out infinite;
+}
+
+@keyframes ringPulse {
+    0% {
+        transform: translate(-50%, -50%) scale(0.8);
+        opacity: 1;
+    }
+    100% {
+        transform: translate(-50%, -50%) scale(2);
+        opacity: 0;
+    }
 }
 
