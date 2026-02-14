@@ -1,25 +1,20 @@
 import { config } from 'dotenv'
-import { app, BrowserWindow, screen, shell } from 'electron/main'
+import { app, BrowserWindow, screen } from 'electron/main'
 import path from 'path'
 import { ipcMain } from 'electron'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
-import OpenAI from 'openai'
 import { takeScreenshot } from './utils/screenshot.js'
 import https from 'https'
 import { URL } from 'url'
 import { OpenRouter } from '@openrouter/sdk'
 import robot from '@jitsi/robotjs'
+import sharp from 'sharp'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 config({ path: path.join(__dirname, '.env') })
-
-const openaiApiKey = process.env.OPENAI_API_KEY || ''
-const openai = new OpenAI({
-  apiKey: openaiApiKey
-})
 
 const openRouterApiKey = process.env.OPENROUTER_API_KEY || ''
 const openRouter = new OpenRouter({
@@ -87,99 +82,6 @@ ipcMain.handle('execute-key', async (event, { key, modifiers = [] }) => {
   }
 })
 
-// Load user config
-ipcMain.handle('load-user-config', async (event) => {
-  try {
-    const configPath = path.join(__dirname, 'data', 'config', 'userConfig.json')
-    const configData = fs.readFileSync(configPath, 'utf-8')
-    return { success: true, config: JSON.parse(configData) }
-  } catch (error) {
-    console.error('Error loading user config:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-// Open URL in default browser
-ipcMain.handle('open-url', async (event, url) => {
-  try {
-    await shell.openExternal(url)
-    console.log('Opened URL:', url)
-    return { success: true }
-  } catch (error) {
-    console.error('Error opening URL:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-// Load applied jobs from CSV
-ipcMain.handle('load-applied-jobs', async (event) => {
-  try {
-    const csvPath = path.join(__dirname, 'data', 'applied_jobs.csv')
-    if (!fs.existsSync(csvPath)) {
-      return { success: true, jobs: [] }
-    }
-    
-    const csvContent = fs.readFileSync(csvPath, 'utf-8')
-    const lines = csvContent.split('\n')
-    
-    // Find the header row (Company,Position,Date Applied,...)
-    let headerIndex = -1
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].startsWith('Company,Position')) {
-        headerIndex = i
-        break
-      }
-    }
-    
-    if (headerIndex === -1) {
-      return { success: true, jobs: [] }
-    }
-    
-    // Parse jobs from data rows
-    const jobs = []
-    for (let i = headerIndex + 1; i < lines.length; i++) {
-      const line = lines[i].trim()
-      if (!line) continue
-      
-      // Simple CSV parse (handles basic cases)
-      const parts = line.split(',')
-      if (parts.length >= 2) {
-        const company = parts[0].trim()
-        const position = parts[1].trim()
-        if (company && position) {
-          jobs.push({ company, position })
-        }
-      }
-    }
-    
-    console.log(`Loaded ${jobs.length} applied jobs`)
-    return { success: true, jobs }
-  } catch (error) {
-    console.error('Error loading applied jobs:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-// Add new job application to CSV
-ipcMain.handle('add-applied-job', async (event, { company, position }) => {
-  try {
-    const csvPath = path.join(__dirname, 'data', 'applied_jobs.csv')
-    const today = new Date().toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' })
-    
-    // Append new row
-    const newRow = `\n${company},${position},${today},Submitted,,`
-    fs.appendFileSync(csvPath, newRow)
-    
-    console.log(`Added job application: ${company} - ${position}`)
-    return { success: true }
-  } catch (error) {
-    console.error('Error adding job application:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-// ============ END ACTION EXECUTION HANDLERS ============
-
 // Handle chat completion using OpenAI SDK
 ipcMain.handle('chat-completion', async (event, messages, model='google/gemini-3-flash-preview') => {
     console.log("Using model:", model);
@@ -221,8 +123,112 @@ ipcMain.handle('take-screenshot', async (event) => {
   }
 })
 
+// ============ CROP PRE-PASS ============
+
+async function getCropRegion(imageBase64, imgWidth, imgHeight, taskContext) {
+  try {
+    const prompt = `You are a screen region selector. Given a screenshot and a task description, identify the region of the screen most relevant to the task.
+
+Task: "${taskContext}"
+
+Return JSON (no markdown):
+{
+  "use_full_screen": false,
+  "region": { "x_ratio": 0.0, "y_ratio": 0.0, "width_ratio": 0.5, "height_ratio": 0.5 },
+  "reasoning": "brief explanation"
+}
+
+Rules:
+- Ratios are 0-1 relative to screen dimensions
+- Add generous padding (10%+ on each side) around the target area
+- Minimum 25% of screen per dimension (width_ratio >= 0.25, height_ratio >= 0.25)
+- Set "use_full_screen": true if unsure, task spans multiple areas, or task is vague
+- x_ratio + width_ratio must be <= 1.0, y_ratio + height_ratio must be <= 1.0`
+
+    const messages = [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt },
+          { type: 'image_url', imageUrl: { url: `data:image/png;base64,${imageBase64}` } }
+        ]
+      }
+    ]
+
+    const result = await openRouter.chat.send({
+      model: 'google/gemini-2.0-flash-001',
+      messages: messages,
+      stream: false,
+    })
+
+    if (!result || !result.choices || !result.choices[0]) {
+      console.log('Crop LLM: invalid response structure, using full screen')
+      return null
+    }
+
+    const content = result.choices[0].message.content
+    const cleanJson = content.replace(/```json\n?|```/g, '').trim()
+    const parsed = JSON.parse(cleanJson)
+
+    if (parsed.use_full_screen) {
+      console.log('Crop LLM: using full screen -', parsed.reasoning)
+      return null
+    }
+
+    const region = parsed.region
+    if (!region) return null
+
+    // Convert ratios to pixels
+    let x = Math.round(region.x_ratio * imgWidth)
+    let y = Math.round(region.y_ratio * imgHeight)
+    let width = Math.round(region.width_ratio * imgWidth)
+    let height = Math.round(region.height_ratio * imgHeight)
+
+    // Enforce minimum 25% of screen per dimension
+    if (width < imgWidth * 0.25) {
+      console.log('Crop LLM: width too small, using full screen')
+      return null
+    }
+    if (height < imgHeight * 0.25) {
+      console.log('Crop LLM: height too small, using full screen')
+      return null
+    }
+
+    // Clamp to image bounds
+    x = Math.max(0, Math.min(x, imgWidth - 1))
+    y = Math.max(0, Math.min(y, imgHeight - 1))
+    width = Math.min(width, imgWidth - x)
+    height = Math.min(height, imgHeight - y)
+
+    console.log(`Crop region: x=${x}, y=${y}, w=${width}, h=${height} (${parsed.reasoning})`)
+    return { x, y, width, height }
+  } catch (error) {
+    console.log('Crop LLM failed, using full screen:', error.message)
+    return null
+  }
+}
+
+function remapBoundingBoxes(parsedContent, cropRegion, fullWidth, fullHeight) {
+  if (!cropRegion || !parsedContent) return parsedContent
+
+  return parsedContent.map(element => {
+    if (!element.bbox || element.bbox.length < 4) return element
+
+    const [x1, y1, x2, y2] = element.bbox
+    return {
+      ...element,
+      bbox: [
+        (cropRegion.x + x1 * cropRegion.width) / fullWidth,
+        (cropRegion.y + y1 * cropRegion.height) / fullHeight,
+        (cropRegion.x + x2 * cropRegion.width) / fullWidth,
+        (cropRegion.y + y2 * cropRegion.height) / fullHeight,
+      ]
+    }
+  })
+}
+
 // Handle parsing screenshot with FastAPI server
-ipcMain.handle('parse-screenshot', async (event, filename) => {
+ipcMain.handle('parse-screenshot', async (event, filename, taskContext) => {
 
   if (isParsingScreenshot) {
     return { success: false, error: 'Screenshot is already being parsed' }
@@ -232,13 +238,40 @@ ipcMain.handle('parse-screenshot', async (event, filename) => {
 
   try {
     const fullPath = path.join(__dirname, 'data', 'screenshots', filename)
-    
+
     // Read image file and convert to base64
     const imageBuffer = fs.readFileSync(fullPath)
     const imageBase64 = imageBuffer.toString('base64')
-    
+
+    // Get image dimensions and attempt crop pre-pass
+    const metadata = await sharp(imageBuffer).metadata()
+    const imgWidth = metadata.width
+    const imgHeight = metadata.height
+
+    let cropRegion = null
+    let parseBase64 = imageBase64
+
+    if (taskContext) {
+      cropRegion = await getCropRegion(imageBase64, imgWidth, imgHeight, taskContext)
+    }
+
+    if (cropRegion) {
+      try {
+        const croppedBuffer = await sharp(imageBuffer)
+          .extract({ left: cropRegion.x, top: cropRegion.y, width: cropRegion.width, height: cropRegion.height })
+          .png()
+          .toBuffer()
+        parseBase64 = croppedBuffer.toString('base64')
+        console.log('Using cropped image for OmniParser')
+      } catch (cropError) {
+        console.log('sharp.extract() failed, using full screen:', cropError.message)
+        cropRegion = null
+        parseBase64 = imageBase64
+      }
+    }
+
     // Send base64 string directly as JSON string
-    const postData = JSON.stringify(imageBase64)
+    const postData = JSON.stringify(parseBase64)
     
     // Get server URL from environment variable (full HTTPS URL)
     const serverUrl = process.env.OMNIPARSER_SERVER_URL
@@ -271,11 +304,17 @@ ipcMain.handle('parse-screenshot', async (event, filename) => {
           try {
             const result = JSON.parse(data)
             if (response.statusCode === 200 && result.success) {
-              resolve({ 
-                success: true, 
-                parsedContent: result.parsed_content, 
-                imageBase64: imageBase64,
-                labeledImageBase64: result.image_base64  // Labeled image from server
+              // Remap bounding boxes from crop-relative to full-screen-relative
+              const remappedContent = cropRegion
+                ? remapBoundingBoxes(result.parsed_content, cropRegion, imgWidth, imgHeight)
+                : result.parsed_content
+
+              resolve({
+                success: true,
+                parsedContent: remappedContent,
+                imageBase64: imageBase64,  // Always return original full screenshot
+                labeledImageBase64: result.image_base64,  // Labeled image from server (cropped region)
+                cropRegion: cropRegion  // Include crop metadata
               })
             } else {
               reject(new Error(result.error || `Server error: ${response.statusCode}`))

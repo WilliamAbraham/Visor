@@ -126,6 +126,49 @@ body {
     30% { opacity: 1; }
 }
 
+/* Task Input */
+.input-wrapper {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    padding: 8px 20px;
+}
+
+.task-input {
+    flex: 1;
+    background: var(--input-bg);
+    border: 1px solid #333;
+    border-radius: 12px;
+    color: var(--text-primary);
+    font-size: 14px;
+    padding: 10px 14px;
+    resize: none;
+    outline: none;
+    font-family: inherit;
+    line-height: 1.4;
+}
+
+.task-input::placeholder {
+    color: var(--text-secondary);
+}
+
+.task-input:focus {
+    border-color: var(--accent-color);
+}
+
+.send-btn {
+    background-color: var(--accent-color);
+    color: white;
+    padding: 10px 14px;
+    border-radius: 10px;
+    flex-shrink: 0;
+}
+
+.send-btn:hover:not(:disabled) {
+    background-color: #5a3fa8;
+    transform: translateY(-1px);
+}
+
 /* Control Bar */
 .control-wrapper {
     padding: 16px 20px;
@@ -172,20 +215,6 @@ body {
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
-}
-
-.start-btn {
-    background-color: var(--start-btn-color);
-    color: white;
-}
-
-.start-btn:hover:not(:disabled) {
-    background-color: #16a34a;
-    transform: translateY(-1px);
-}
-
-.start-btn:active:not(:disabled) {
-    transform: scale(0.98);
 }
 
 .stop-btn {

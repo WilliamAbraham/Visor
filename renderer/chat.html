@@ -6,7 +6,7 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; connect-src 'self' https://api.openai.com; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
     />
-    <title>Job Application Agent</title>
+    <title>Visor</title>
     <link rel="stylesheet" href="chat.css">
   </head>
   <body>
@@ -14,7 +14,16 @@
       <div class="chat-messages" id="messages">
         <!-- Status messages will appear here -->
       </div>
-      
+
+      <div class="input-wrapper">
+        <textarea id="taskInput" class="task-input" placeholder="Describe a task..." rows="2"></textarea>
+        <button id="sendButton" class="control-btn send-btn" disabled>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="white" stroke="none">
+            <path d="M2 21l21-9L2 3v7l15 2-15 2z"></path>
+          </svg>
+        </button>
+      </div>
+
       <div class="control-wrapper">
         <div class="control-bar">
           <select id="modelSelector" class="model-selector" title="Select AI model">
@@ -23,14 +32,7 @@
             <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
             <option value="openai/gpt-4o">GPT-4o</option>
           </select>
-          
-          <button id="startButton" class="control-btn start-btn" disabled>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="white" stroke="none">
-              <polygon points="5,3 19,12 5,21"></polygon>
-            </svg>
-            Start
-          </button>
-          
+
           <button id="stopButton" class="control-btn stop-btn" disabled>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="white" stroke="none">
               <rect x="4" y="4" width="16" height="16" rx="2"></rect>

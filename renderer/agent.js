@@ -97,8 +97,8 @@ class VisorAgent {
                     text:
                         `[User Query]\n${userMessage}\n\n` +
                         `You will see TWO images (if provided):\n` +
-                        `- Image 1: original screenshot\n` +
-                        `- Image 2: screenshot with numbered boxes (IDs).\n` +
+                        `- Image 1: original full screenshot\n` +
+                        `- Image 2: screenshot region with numbered boxes (IDs). May be cropped to the relevant area.\n` +
                         `When choosing a click target, the target_id MUST match the number on Image 2 (labeled overlay).`
                 },
                 {

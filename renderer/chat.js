@@ -1,5 +1,6 @@
-const startButton = document.getElementById('startButton');
+const sendButton = document.getElementById('sendButton');
 const stopButton = document.getElementById('stopButton');
+const taskInput = document.getElementById('taskInput');
 const messagesContainer = document.getElementById('messages');
 const chatContainer = document.querySelector('.chat-container');
 const modelSelector = document.getElementById('modelSelector');
@@ -7,40 +8,19 @@ const modelSelector = document.getElementById('modelSelector');
 let numOfScreenshots = 0;
 let isRunning = false;
 let shouldStop = false;
-let userConfig = null;
-let appliedJobs = []; // List of { company, position } objects
+let currentTask = '';
 
 // Initialize Visor Agent
 const agent = new VisorAgent();
 
-// Initialize agent and load config on startup
+// Initialize agent on startup
 async function initialize() {
     try {
         await agent.init();
         console.log('Visor Agent ready');
-        
-        // Load user config
-        const configResult = await window.electronAPI.loadUserConfig();
-        if (configResult.success) {
-            userConfig = configResult.config;
-            console.log('User config loaded:', userConfig);
-        } else {
-            console.error('Failed to load user config:', configResult.error);
-            addMessage('Warning: Could not load user config.', 'system');
-        }
-        
-        // Load applied jobs list
-        const appliedResult = await window.electronAPI.loadAppliedJobs();
-        if (appliedResult.success) {
-            appliedJobs = appliedResult.jobs;
-            console.log(`Loaded ${appliedJobs.length} previously applied jobs`);
-            addMessage(`Agent initialized. ${appliedJobs.length} jobs already applied to.`, 'system');
-        } else {
-            console.error('Failed to load applied jobs:', appliedResult.error);
-            addMessage('Agent initialized. Ready to start.', 'system');
-        }
-        
-        startButton.disabled = false;
+        addMessage('Agent initialized. Ready to go.', 'system');
+        sendButton.disabled = false;
+        taskInput.focus();
     } catch (error) {
         console.error('Failed to initialize:', error);
         addMessage('Failed to initialize. Please refresh.', 'system');
@@ -52,7 +32,7 @@ initialize();
 function addMessage(text, type = 'system') {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${type}`;
-    
+
     // Add timestamp for action messages
     if (type === 'action') {
         const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -60,7 +40,7 @@ function addMessage(text, type = 'system') {
     } else {
         messageDiv.textContent = text;
     }
-    
+
     messagesContainer.appendChild(messageDiv);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
@@ -154,10 +134,10 @@ async function executeClick(targetId, boundingBoxes) {
     if (targetBox) {
         const screenWidth = window.screen.width;
         const screenHeight = window.screen.height;
-        
+
         const x = Math.round((targetBox[0] + targetBox[2]) / 2 * screenWidth);
         const y = Math.round((targetBox[1] + targetBox[3]) / 2 * screenHeight);
-        
+
         console.log(`Executing click at (${x}, ${y}) for target ${targetId}`);
         const result = await window.electronAPI.executeClick(x, y);
         return result.success;
@@ -192,20 +172,20 @@ async function runAutonomousStep(message = null) {
     if (shouldStop) {
         return { done: true, stopped: true };
     }
-    
+
     if (message === null) {
         message = "Continue with the task. What's the next action?";
     }
-    
+
     showLoadingIndicator();
     await clearScreenshots();
-    
+
     // Check again after clearing
     if (shouldStop) {
         hideLoadingIndicator();
         return { done: true, stopped: true };
     }
-    
+
     const screenshot = await captureScreenshot();
     numOfScreenshots += 1;
 
@@ -216,7 +196,7 @@ async function runAutonomousStep(message = null) {
 
     if (screenshot) {
         try {
-            const result = await window.electronAPI.parseScreenshot(screenshot);
+            const result = await window.electronAPI.parseScreenshot(screenshot, currentTask);
             if (result.success) {
                 const filteredContent = result.parsedContent;
                 labeledImageBase64 = result.labeledImageBase64;
@@ -257,24 +237,24 @@ async function runAutonomousStep(message = null) {
     }
 
     const selectedModel = modelSelector.value;
-    
+
     try {
         const response = await agent.sendMessage(
-            message, 
-            uiContext, 
-            currentImageBase64, 
-            labeledImageBase64, 
+            message,
+            uiContext,
+            currentImageBase64,
+            labeledImageBase64,
             selectedModel
         );
-        
+
         // Check after LLM call
         if (shouldStop) {
             hideLoadingIndicator();
             return { done: true, stopped: true };
         }
-        
+
         console.log('Agent response:', response);
-        
+
         if (!response.output || !Array.isArray(response.output)) {
             throw new Error('Invalid response format: missing output array');
         }
@@ -306,25 +286,20 @@ async function runAutonomousStep(message = null) {
 
         hideLoadingIndicator();
 
-        // Check for [APPLIED] in message (track new applications)
-        if (messageText) {
-            await checkAndSaveNewApplication(messageText);
-        }
-
         // Execute action batch
         if (actions.length > 0) {
             addMessage(messageText || `Executing ${actions.length} action(s)`, 'action');
-            
+
             for (let i = 0; i < actions.length; i++) {
                 const action = actions[i];
-                
+
                 // Check if stopped mid-batch
                 if (shouldStop) {
                     return { done: true, stopped: true };
                 }
-                
+
                 console.log(`Executing action ${i + 1}/${actions.length}:`, action.type);
-                
+
                 if (action.type === 'click' && action.target_id !== null && action.target_id !== undefined) {
                     await executeClick(action.target_id, boundingBoxes);
                     await sleep(150);
@@ -358,7 +333,7 @@ async function runAutonomousStep(message = null) {
                     return { done: true };
                 }
             }
-            
+
             // Small delay after batch before next screenshot
             await sleep(300);
             return { done: false };
@@ -370,7 +345,7 @@ async function runAutonomousStep(message = null) {
         }
 
         return { done: false };
-        
+
     } catch (error) {
         hideLoadingIndicator();
         console.error('Error:', error);
@@ -383,94 +358,39 @@ function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Format applied jobs as a string for the agent prompt
-// Limit to most recent 75 jobs to avoid context length issues
-function formatAppliedJobsList() {
-    if (appliedJobs.length === 0) {
-        return "[APPLIED JOBS LIST]\nNone yet - this is the first session.";
-    }
-    
-    // Take the most recent jobs (last entries in the list)
-    const maxJobs = 75;
-    const recentJobs = appliedJobs.slice(-maxJobs);
-    const jobLines = recentJobs.map(job => `${job.company} | ${job.position}`).join('\n');
-    
-    const header = appliedJobs.length > maxJobs 
-        ? `[APPLIED JOBS LIST] (showing ${maxJobs} most recent of ${appliedJobs.length} total)`
-        : `[APPLIED JOBS LIST]`;
-    
-    return `${header}\nCompany | Position\n${jobLines}`;
-}
-
-// Parse "[APPLIED]" message and save new application
-async function checkAndSaveNewApplication(messageText) {
-    const appliedMatch = messageText.match(/\[APPLIED\]\s*(.+?)\s*\|\s*(.+)/i);
-    if (appliedMatch) {
-        const company = appliedMatch[1].trim();
-        const position = appliedMatch[2].trim();
-        
-        // Check if already in our list (avoid duplicates)
-        const alreadyTracked = appliedJobs.some(
-            job => job.company.toLowerCase() === company.toLowerCase() && 
-                   job.position.toLowerCase() === position.toLowerCase()
-        );
-        
-        if (!alreadyTracked) {
-            try {
-                const result = await window.electronAPI.addAppliedJob(company, position);
-                if (result.success) {
-                    appliedJobs.push({ company, position });
-                    console.log(`Tracked new application: ${company} - ${position}`);
-                    addMessage(`Saved application: ${company} - ${position}`, 'system');
-                }
-            } catch (error) {
-                console.error('Error saving new application:', error);
-            }
-        }
-    }
-}
-
-async function startAgent() {
+async function startAgent(taskMessage) {
     if (isRunning) {
         addMessage('Already running!', 'system');
         return;
     }
-    
+
+    if (!taskMessage || !taskMessage.trim()) {
+        addMessage('Please describe a task first.', 'system');
+        return;
+    }
+
     isRunning = true;
     shouldStop = false;
-    startButton.disabled = true;
+    sendButton.disabled = true;
+    taskInput.disabled = true;
     stopButton.disabled = false;
-    
-    // Clear previous messages and start fresh
-    clearMessages();
-    addMessage('Starting job application agent...', 'system');
-    
-    // Open job board URL from config
-    if (userConfig && userConfig.jobBoard && userConfig.jobBoard.url) {
-        addMessage(`Opening ${userConfig.jobBoard.url}...`, 'action');
-        await window.electronAPI.openUrl(userConfig.jobBoard.url);
-        // Wait for browser to open and load
-        await sleep(3000);
-    }
-    
-    // Include applied jobs list in the initial message
-    const appliedJobsContext = formatAppliedJobsList();
-    const initialMessage = `${appliedJobsContext}
 
-Start browsing the current page for job listings. Look for relevant software engineering, data science, or machine learning internship positions that match my profile. Open promising job listings and apply to relevant ones. SKIP any jobs from companies where I've already applied to a similar position.`;
-    
-    let message = initialMessage;
+    clearMessages();
+    addMessage(taskMessage.trim(), 'action');
+
+    currentTask = taskMessage.trim();
+    let message = taskMessage.trim();
     let stepCount = 0;
     let errorCount = 0;
     const maxSteps = 200;
     const maxErrors = 3;
-    
+
     while (isRunning && !shouldStop && stepCount < maxSteps) {
         stepCount++;
         console.log(`\n=== Step ${stepCount} ===`);
-        
+
         const result = await runAutonomousStep(message);
-        
+
         if (result.done) {
             if (result.error && errorCount < maxErrors) {
                 // Transient error - wait and retry
@@ -482,35 +402,55 @@ Start browsing the current page for job listings. Look for relevant software eng
             }
             break;
         }
-        
+
         // Reset error count on successful step
         errorCount = 0;
         message = null;
-        await sleep(500); // Shorter delay since actions are batched
+        await sleep(500);
     }
-    
+
     isRunning = false;
-    startButton.disabled = false;
+    sendButton.disabled = false;
+    taskInput.disabled = false;
     stopButton.disabled = true;
-    
+
     if (shouldStop) {
         addMessage(`Stopped by user after ${stepCount} steps`, 'system');
     } else {
         addMessage(`Completed after ${stepCount} steps`, 'system');
     }
+
+    taskInput.focus();
 }
 
 function stopAgent() {
     if (!isRunning) return;
-    
+
     shouldStop = true;
     addMessage('Stopping...', 'system');
 }
 
+// Send task from input
+function sendTask() {
+    const task = taskInput.value.trim();
+    if (task && !isRunning) {
+        taskInput.value = '';
+        startAgent(task);
+    }
+}
+
 // Event listeners
-startButton.addEventListener('click', startAgent);
+sendButton.addEventListener('click', sendTask);
 stopButton.addEventListener('click', stopAgent);
 
+// Enter to send (Shift+Enter for newline)
+taskInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendTask();
+    }
+});
+
 // Initial welcome message
-addMessage('Job Application Agent', 'welcome');
-addMessage('Click Start to begin autonomous job search and application.', 'system');
+addMessage('Visor', 'welcome');
+addMessage('Describe a task and press Enter to begin.', 'system');

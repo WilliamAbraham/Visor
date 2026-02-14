@@ -1,7 +1,7 @@
 {
   "name": "visor1.0",
   "version": "1.0.0",
-  "description": "<p align=\"center\">   <img src=\"imgs/logo.png\" alt=\"Logo\"> </p> <!-- <a href=\"https://trendshift.io/repositories/12975\" target=\"_blank\"><img src=\"https://trendshift.io/api/badge/repositories/12975\" alt=\"microsoft%2FOmniParser | Trendshift\" style=\"width: 250px; height: 55px;\" width=\"250\" height=\"55\"/></a> -->",
+  "description": "General-purpose computer use agent powered by OmniParser",
   "type": "module",
   "main": "main.js",
   "scripts": {
@@ -16,12 +16,9 @@
   },
   "dependencies": {
     "@jitsi/robotjs": "^0.6.21",
-    "@openai/agents": "^0.3.4",
     "@openrouter/sdk": "^0.3.11",
     "dotenv": "^17.2.3",
-    "openai": "^6.10.0",
     "screenshot-desktop": "^1.15.3",
-    "uiohook-napi": "^1.5.4",
-    "zod": "^3.25.76"
+    "sharp": "^0.34.5"
   }
 }

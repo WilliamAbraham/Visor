@@ -51,6 +51,10 @@ wget-log
 # Environment variables
 .env
 
+# md files
+*.md
+!README.md
+
 # Application data (screenshots, outputs)
 data/screenshots/
 data/labeled_screenshots/
