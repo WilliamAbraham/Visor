@@ -3,8 +3,11 @@ let useScreenshot = true;
 class VisorAgent {
     constructor() {
         this.systemPrompt = '';
+        this.systemInfo = '';
         this.chatHistory = [];
         this.isInitialized = false;
+        this.originalGoal = null;
+        this.completedSteps = [];
     }
 
     async init() {
@@ -16,7 +19,16 @@ class VisorAgent {
         try {
             const response = await fetch('../data/config/visorAgent.txt');
             this.systemPrompt = await response.text();
-            
+
+            // Fetch system info for diagnostic context
+            try {
+                this.systemInfo = await window.electronAPI.getSystemInfo();
+                console.log('System info loaded:', this.systemInfo);
+            } catch (err) {
+                console.warn('Could not load system info:', err);
+                this.systemInfo = '';
+            }
+
             // Send the system prompt to establish context
             this.addToHistory('system', this.systemPrompt);
             
@@ -34,10 +46,38 @@ class VisorAgent {
 
     clearHistory() {
         this.chatHistory = [];
+        this.originalGoal = null;
+        this.completedSteps = [];
     }
 
     getFullHistory() {
         return this.chatHistory;
+    }
+
+    extractStepSummary(parsedResponse) {
+        let actionDesc = '';
+        let messageDesc = '';
+        for (const item of (parsedResponse.output || [])) {
+            if (item.type === 'computer_call' && item.action) {
+                const a = item.action;
+                if (a.type === 'click' || a.type === 'double_click') {
+                    actionDesc = `${a.type} on element #${a.target_id}`;
+                } else if (a.type === 'type') {
+                    actionDesc = `type "${a.text}"`;
+                } else if (a.type === 'keypress') {
+                    actionDesc = `keypress [${(a.keys || []).join('+')}]`;
+                } else if (a.type === 'scroll') {
+                    actionDesc = `scroll ${a.direction}`;
+                } else if (a.type === 'wait') {
+                    actionDesc = `wait ${a.ms}ms`;
+                } else if (a.type === 'done') {
+                    actionDesc = 'done';
+                }
+            } else if (item.type === 'message' && item.reply) {
+                messageDesc = item.reply;
+            }
+        }
+        return `${actionDesc}${messageDesc ? ' — ' + messageDesc : ''}`;
     }
 
     /*
@@ -53,22 +93,31 @@ class VisorAgent {
             throw new Error('VisorAgent not initialized. Call init() first.');
         }
 
-        // Construct messages array with 3 components:
-        // 1. System prompt (from chatHistory[0])
-        // 2. UI Context as a separate user message
-        // 3. Chat history (previous conversation)
-        // 4. Current user message
-        
+        // Construct messages with smart context windowing:
+        // 1. System prompt
+        // 2. UI Context (current screen)
+        // 3. Original goal + progress summary (compact log of all completed steps)
+        // 4. Recent history (last 3 exchanges in full detail)
+        // 5. Current user message + images
+
         const messages = [];
-        
-        // 1. Add system prompt (first item in chatHistory)
+
+        // 1. Add system prompt
         if (this.chatHistory.length > 0 && this.chatHistory[0].role === 'system') {
             messages.push({
                 role: 'system',
                 content: this.chatHistory[0].content
             });
         }
-        
+
+        // 1b. Add system info for diagnostic context
+        if (this.systemInfo) {
+            messages.push({
+                role: 'system',
+                content: `[System Diagnostic Info]\n${this.systemInfo}`
+            });
+        }
+
         // 2. Add UI context as separate user message
         if (uiContext) {
             messages.push({
@@ -76,11 +125,23 @@ class VisorAgent {
                 content: `[UI Context]\nHere is the list of detected UI elements by id and description:\n${uiContext}`
             });
         }
-        
-        // 3. Add chat history (skip system prompt, get last 10 exchanges)
-        const history = this.chatHistory.slice(1).slice(-10);
-        if (history.length > 0) {
-            history.forEach(msg => {
+
+        // 3. Capture original goal on first real user message
+        if (!this.originalGoal) {
+            this.originalGoal = userMessage;
+        }
+
+        // 4. Add original goal + progress summary
+        let contextBlock = `[Original Goal]\n${this.originalGoal}`;
+        if (this.completedSteps.length > 0) {
+            contextBlock += `\n\n[Progress So Far]\n${this.completedSteps.map((s, i) => `Step ${i + 1}: ${s}`).join('\n')}`;
+        }
+        messages.push({ role: 'user', content: contextBlock });
+
+        // 5. Add recent history (last 6 messages = ~3 exchanges, full detail)
+        const recentHistory = this.chatHistory.slice(1).slice(-6);
+        if (recentHistory.length > 0) {
+            recentHistory.forEach(msg => {
                 messages.push({
                     role: msg.role,
                     content: typeof msg.content === 'string' ? msg.content : String(msg.content)
@@ -160,9 +221,11 @@ class VisorAgent {
 
         const stringifiedResponse = JSON.stringify(parsedResponse);
 
+        // Track step summary for progress log
+        this.completedSteps.push(this.extractStepSummary(parsedResponse));
+
         // Add to history (store user message as text, response as text)
         this.addToHistory('user', userMessage);
-
         this.addToHistory('assistant', stringifiedResponse);
 
         return parsedResponse;

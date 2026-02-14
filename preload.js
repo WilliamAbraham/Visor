@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onTriggerNextStep: (callback) => ipcRenderer.on('trigger-next-step', (_event, value) => callback(value)),
   sendDrawRectangle: (data) => ipcRenderer.send('draw-rectangle', data),
   onDrawRectangle: (callback) => ipcRenderer.on('draw-rectangle', (_event, value) => callback(value)),
-  setClickable: (isClickable) => ipcRenderer.send('set-clickable', isClickable)
+  setClickable: (isClickable) => ipcRenderer.send('set-clickable', isClickable),
+  getSystemInfo: () => ipcRenderer.invoke('get-system-info')
 })
 

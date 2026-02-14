@@ -9,6 +9,8 @@ import { takeScreenshot } from './utils/screenshot.js'
 import https from 'https'
 import { URL } from 'url'
 import { uIOhook, UiohookKey } from 'uiohook-napi'
+import os from 'os'
+import { execSync } from 'child_process'
 import { OpenRouter } from '@openrouter/sdk'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -245,6 +247,71 @@ ipcMain.handle('clear-screenshot-directories', async (event) => {
   } catch (error) {
     console.error('Error clearing screenshot directories:', error)
     return { success: false, error: error.message }
+  }
+})
+
+// Handle get-system-info request
+ipcMain.handle('get-system-info', async () => {
+  try {
+    const platform = os.platform()
+    const cpus = os.cpus()
+    const totalMemGB = (os.totalmem() / (1024 ** 3)).toFixed(1)
+    const freeMemGB = (os.freemem() / (1024 ** 3)).toFixed(1)
+
+    // OS version
+    let osVersion = os.release()
+    if (platform === 'darwin') {
+      try { osVersion = execSync('sw_vers -productVersion', { encoding: 'utf8' }).trim() } catch {}
+    } else if (platform === 'win32') {
+      try { osVersion = execSync('ver', { encoding: 'utf8' }).trim() } catch {}
+    }
+
+    // Disk info
+    let diskInfo = 'unknown'
+    try {
+      if (platform === 'darwin' || platform === 'linux') {
+        const df = execSync("df -h / | tail -1", { encoding: 'utf8' }).trim()
+        const parts = df.split(/\s+/)
+        diskInfo = `Total: ${parts[1]}, Used: ${parts[2]}, Available: ${parts[3]}`
+      } else if (platform === 'win32') {
+        const wmic = execSync('wmic logicaldisk where "DeviceID=\'C:\'" get Size,FreeSpace /format:value', { encoding: 'utf8' }).trim()
+        diskInfo = wmic.replace(/\r/g, '').split('\n').filter(Boolean).join(', ')
+      }
+    } catch {}
+
+    // Network interfaces
+    const nets = os.networkInterfaces()
+    const activeInterfaces = []
+    for (const [name, addrs] of Object.entries(nets)) {
+      for (const addr of addrs) {
+        if (!addr.internal && addr.family === 'IPv4') {
+          activeInterfaces.push(`${name}: ${addr.address}`)
+        }
+      }
+    }
+
+    // Display resolution
+    const primaryDisplay = screen.getPrimaryDisplay()
+    const { width, height } = primaryDisplay.size
+    const scaleFactor = primaryDisplay.scaleFactor
+
+    const info = [
+      `=== System Information ===`,
+      `OS: ${platform} ${osVersion} (${os.arch()})`,
+      `Hostname: ${os.hostname()}`,
+      `User: ${os.userInfo().username}`,
+      `CPU: ${cpus[0]?.model || 'unknown'} (${cpus.length} cores)`,
+      `RAM: ${freeMemGB} GB free / ${totalMemGB} GB total`,
+      `Disk (/): ${diskInfo}`,
+      `Network: ${activeInterfaces.length > 0 ? activeInterfaces.join('; ') : 'No active interfaces'}`,
+      `Display: ${width}x${height} (scale: ${scaleFactor}x)`,
+    ].join('\n')
+
+    console.log('System info gathered:', info)
+    return info
+  } catch (error) {
+    console.error('Error gathering system info:', error)
+    return `System info unavailable: ${error.message}`
   }
 })
 
