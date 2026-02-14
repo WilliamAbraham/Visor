@@ -156,7 +156,19 @@ class VisorAgent {
         }
 
         const cleanJson = result.response.replace(/```json\n?|```/g, '').trim();
-        const parsedResponse = JSON.parse(cleanJson);
+        
+        // Check if response looks like an error instead of JSON
+        if (cleanJson.startsWith('error') || cleanJson.includes('error code:')) {
+            throw new Error(`API returned error: ${cleanJson}`);
+        }
+        
+        let parsedResponse;
+        try {
+            parsedResponse = JSON.parse(cleanJson);
+        } catch (parseError) {
+            console.error('Failed to parse response:', cleanJson.substring(0, 200));
+            throw new Error(`Failed to parse response: ${cleanJson.substring(0, 100)}`);
+        }
 
         const stringifiedResponse = JSON.stringify(parsedResponse);
 
@@ -182,51 +194,3 @@ class VisorAgent {
 }
 
 
-/*
-    ValidationAgent class
-    This agent is responsible for ensuring visorAgent is working correctly and is not hallucinating.
-    It should be rarely called
-    WIP
-*/
-class validationAgent {
-    constructor() {
-        this.systemPrompt = '';
-        this.chatHistory = [];
-        this.isInitialized = false;
-    }
-    
-    
-    async init() {
-        if (this.isInitialized) {
-            console.warn('ValidationAgent already initialized');
-            return;
-        }
-        
-        
-        try {
-            const response = await fetch('../data/config/validationAgent.txt');
-            this.systemPrompt = await response.text();
-            
-            // Send the system prompt to establish context
-            this.addToHistory('system', this.systemPrompt);
-            
-            this.isInitialized = true;
-            console.log('ValidationAgent initialized successfully');
-        } catch (error) {
-            console.error('Failed to initialize ValidationAgent:', error);
-            throw new Error('Could not load system prompt');
-        }
-    }
-
-    addToHistory(role, content) {
-        this.chatHistory.push({ role, content });
-    }
-
-    clearHistory() {
-        this.chatHistory = [];
-    }
-
-    getFullHistory() {
-        return this.chatHistory;
-    }
-}

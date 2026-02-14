@@ -1,5 +1,5 @@
 import { config } from 'dotenv'
-import { app, BrowserWindow, screen } from 'electron/main'
+import { app, BrowserWindow, screen, shell } from 'electron/main'
 import path from 'path'
 import { ipcMain } from 'electron'
 import fs from 'fs'
@@ -8,8 +8,8 @@ import OpenAI from 'openai'
 import { takeScreenshot } from './utils/screenshot.js'
 import https from 'https'
 import { URL } from 'url'
-import { uIOhook, UiohookKey } from 'uiohook-napi'
 import { OpenRouter } from '@openrouter/sdk'
+import robot from '@jitsi/robotjs'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -29,59 +29,183 @@ const openRouter = new OpenRouter({
 let isParsingScreenshot = false
 let overlayWin = null
 let chatWin = null
-let activeRect = null // Track active rectangle {x, y, width, height}
 
-// Start global input hook
-uIOhook.on('mousedown', (e) => {
-  if (activeRect) {
-    const { x, y } = e
-    // Check if click is inside active rectangle
-    /*
-        This will be the foundation for the loop logic, 
-    */
-    if (x >= activeRect.x && x <= activeRect.x + activeRect.width &&
-        y >= activeRect.y && y <= activeRect.y + activeRect.height) {
-      
-      // Clicked inside! Clear rectangle and trigger next step
-      if (overlayWin) {
-        overlayWin.webContents.send('draw-rectangle', []) // Send empty to clear
-        setTimeout(() => {
-          if (chatWin) {
-            chatWin.webContents.send('trigger-next-step');
-          }
-        }, 1000);
-        activeRect = null
-      }
-    }
+// Configure robotjs for smoother mouse movement
+robot.setMouseDelay(50)
+robot.setKeyboardDelay(50)
+
+// ============ ACTION EXECUTION HANDLERS ============
+
+// Execute mouse click at coordinates
+ipcMain.handle('execute-click', async (event, { x, y, button = 'left' }) => {
+  try {
+    robot.moveMouse(x, y)
+    robot.mouseClick(button)
+    console.log(`Clicked at (${x}, ${y}) with ${button} button`)
+    return { success: true }
+  } catch (error) {
+    console.error('Click execution error:', error)
+    return { success: false, error: error.message }
   }
 })
 
-uIOhook.start()
+// Execute scroll action
+ipcMain.handle('execute-scroll', async (event, { direction, amount = 5 }) => {
+  try {
+    // robotjs scroll: positive = up, negative = down
+    const scrollAmount = direction === 'up' ? amount : -amount
+    robot.scrollMouse(0, scrollAmount)
+    console.log(`Scrolled ${direction} by ${amount}`)
+    return { success: true }
+  } catch (error) {
+    console.error('Scroll execution error:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// Execute keyboard typing
+ipcMain.handle('execute-type', async (event, { text }) => {
+  try {
+    robot.typeString(text)
+    console.log(`Typed: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`)
+    return { success: true }
+  } catch (error) {
+    console.error('Type execution error:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// Execute key press (for special keys like Enter, Tab, etc.)
+ipcMain.handle('execute-key', async (event, { key, modifiers = [] }) => {
+  try {
+    robot.keyTap(key, modifiers)
+    console.log(`Key pressed: ${modifiers.length ? modifiers.join('+') + '+' : ''}${key}`)
+    return { success: true }
+  } catch (error) {
+    console.error('Key execution error:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// Load user config
+ipcMain.handle('load-user-config', async (event) => {
+  try {
+    const configPath = path.join(__dirname, 'data', 'config', 'userConfig.json')
+    const configData = fs.readFileSync(configPath, 'utf-8')
+    return { success: true, config: JSON.parse(configData) }
+  } catch (error) {
+    console.error('Error loading user config:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// Open URL in default browser
+ipcMain.handle('open-url', async (event, url) => {
+  try {
+    await shell.openExternal(url)
+    console.log('Opened URL:', url)
+    return { success: true }
+  } catch (error) {
+    console.error('Error opening URL:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// Load applied jobs from CSV
+ipcMain.handle('load-applied-jobs', async (event) => {
+  try {
+    const csvPath = path.join(__dirname, 'data', 'applied_jobs.csv')
+    if (!fs.existsSync(csvPath)) {
+      return { success: true, jobs: [] }
+    }
+    
+    const csvContent = fs.readFileSync(csvPath, 'utf-8')
+    const lines = csvContent.split('\n')
+    
+    // Find the header row (Company,Position,Date Applied,...)
+    let headerIndex = -1
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith('Company,Position')) {
+        headerIndex = i
+        break
+      }
+    }
+    
+    if (headerIndex === -1) {
+      return { success: true, jobs: [] }
+    }
+    
+    // Parse jobs from data rows
+    const jobs = []
+    for (let i = headerIndex + 1; i < lines.length; i++) {
+      const line = lines[i].trim()
+      if (!line) continue
+      
+      // Simple CSV parse (handles basic cases)
+      const parts = line.split(',')
+      if (parts.length >= 2) {
+        const company = parts[0].trim()
+        const position = parts[1].trim()
+        if (company && position) {
+          jobs.push({ company, position })
+        }
+      }
+    }
+    
+    console.log(`Loaded ${jobs.length} applied jobs`)
+    return { success: true, jobs }
+  } catch (error) {
+    console.error('Error loading applied jobs:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// Add new job application to CSV
+ipcMain.handle('add-applied-job', async (event, { company, position }) => {
+  try {
+    const csvPath = path.join(__dirname, 'data', 'applied_jobs.csv')
+    const today = new Date().toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' })
+    
+    // Append new row
+    const newRow = `\n${company},${position},${today},Submitted,,`
+    fs.appendFileSync(csvPath, newRow)
+    
+    console.log(`Added job application: ${company} - ${position}`)
+    return { success: true }
+  } catch (error) {
+    console.error('Error adding job application:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// ============ END ACTION EXECUTION HANDLERS ============
 
 // Handle chat completion using OpenAI SDK
 ipcMain.handle('chat-completion', async (event, messages, model='google/gemini-3-flash-preview') => {
-
     console.log("Using model:", model);
 
-/* OpenRouter */
-    const result = await openRouter.chat.send({
-      model: model,
-      messages: messages,
-      stream: false,
-    });
-    const content = result.choices[0].message.content;
-    console.log('OpenRouter response:', content);
-    
-    // Return the content as-is (could be string or object)
-    return { success: true, response: content };
+    try {
+        const result = await openRouter.chat.send({
+            model: model,
+            messages: messages,
+            stream: false,
+        });
+        
+        if (!result || !result.choices || !result.choices[0]) {
+            console.error('Invalid API response structure:', result);
+            return { success: false, error: 'Invalid API response structure' };
+        }
+        
+        const content = result.choices[0].message.content;
+        console.log('OpenRouter response:', content);
+        
+        return { success: true, response: content };
+    } catch (error) {
+        console.error('OpenRouter API error:', error);
+        return { success: false, error: error.message || 'API call failed' };
+    }
 })
 
-// Allow main to trigger renderer's next step
-ipcMain.on('trigger-next-step', (_event) => {
-  if (chatWin) {
-    chatWin.webContents.send('trigger-next-step');
-  }
-});
 
 // Handle screenshot taking
 ipcMain.handle('take-screenshot', async (event) => {
@@ -157,7 +281,9 @@ ipcMain.handle('parse-screenshot', async (event, filename) => {
               reject(new Error(result.error || `Server error: ${response.statusCode}`))
             }
           } catch (parseError) {
-            reject(new Error(`Failed to parse response: ${parseError.message}`))
+            // Log the actual response for debugging
+            console.error('OmniParser raw response:', data.substring(0, 500))
+            reject(new Error(`OmniParser error: ${data.substring(0, 100)}`))
           }
         })
       })
@@ -248,20 +374,6 @@ ipcMain.handle('clear-screenshot-directories', async (event) => {
   }
 })
 
-// Handle draw rectangle request
-ipcMain.on('draw-rectangle', (event, data) => {
-  if (overlayWin) {
-    // Update active rect for hit testing
-    // data can be array or single object. We support single active rect for now based on logic
-    if (Array.isArray(data)) {
-        activeRect = data.length > 0 ? data[0] : null
-    } else {
-        activeRect = data && data.width ? data : null
-    }
-    
-    overlayWin.webContents.send('draw-rectangle', data)
-  }
-})
 
 // Hide dock icon on macOS
 const is_mac = process.platform === 'darwin'

@@ -1,50 +1,72 @@
-const messageInput = document.getElementById('messageInput');
-const sendButton = document.getElementById('sendButton');
+const startButton = document.getElementById('startButton');
+const stopButton = document.getElementById('stopButton');
 const messagesContainer = document.getElementById('messages');
 const chatContainer = document.querySelector('.chat-container');
 const modelSelector = document.getElementById('modelSelector');
-// const getHistoryButton = document.getElementById('getHistory');
-
-// Available models
-const availableModels = [
-    { value: 'openrouter/auto', label: 'Auto' },
-    { value: 'google/gemini-3-flash-preview', label: 'Gemini 3 Flash' },
-    { value: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet' },
-    { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
-    { value: 'openai/gpt-4o', label: 'GPT-4o' },
-    { value: 'meta-llama/llama-3.1-70b-instruct', label: 'Llama 3.1 70B' }
-];
 
 let numOfScreenshots = 0;
-
-// Track if first message has been sent
-let isFirstMessage = true;
+let isRunning = false;
+let shouldStop = false;
+let userConfig = null;
+let appliedJobs = []; // List of { company, position } objects
 
 // Initialize Visor Agent
 const agent = new VisorAgent();
 
-// Disable input until agent is ready
-messageInput.disabled = true;
-sendButton.disabled = true;
+// Initialize agent and load config on startup
+async function initialize() {
+    try {
+        await agent.init();
+        console.log('Visor Agent ready');
+        
+        // Load user config
+        const configResult = await window.electronAPI.loadUserConfig();
+        if (configResult.success) {
+            userConfig = configResult.config;
+            console.log('User config loaded:', userConfig);
+        } else {
+            console.error('Failed to load user config:', configResult.error);
+            addMessage('Warning: Could not load user config.', 'system');
+        }
+        
+        // Load applied jobs list
+        const appliedResult = await window.electronAPI.loadAppliedJobs();
+        if (appliedResult.success) {
+            appliedJobs = appliedResult.jobs;
+            console.log(`Loaded ${appliedJobs.length} previously applied jobs`);
+            addMessage(`Agent initialized. ${appliedJobs.length} jobs already applied to.`, 'system');
+        } else {
+            console.error('Failed to load applied jobs:', appliedResult.error);
+            addMessage('Agent initialized. Ready to start.', 'system');
+        }
+        
+        startButton.disabled = false;
+    } catch (error) {
+        console.error('Failed to initialize:', error);
+        addMessage('Failed to initialize. Please refresh.', 'system');
+    }
+}
 
-// Initialize agent on startup
-agent.init().then(() => {
-    console.log('Visor Agent ready');
-    messageInput.disabled = false;
-    sendButton.disabled = false;
-    messageInput.placeholder = 'Type a message...';
-}).catch(error => {
-    console.error('Failed to initialize agent:', error);
-    addMessage('Failed to initialize AI agent. Please refresh.', 'system');
-    messageInput.placeholder = 'Agent failed to load';
-});
+initialize();
 
-function addMessage(text, type = 'user') {
+function addMessage(text, type = 'system') {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${type}`;
-    messageDiv.textContent = text;
+    
+    // Add timestamp for action messages
+    if (type === 'action') {
+        const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        messageDiv.innerHTML = `<span class="timestamp">[${time}]</span> ${text}`;
+    } else {
+        messageDiv.textContent = text;
+    }
+    
     messagesContainer.appendChild(messageDiv);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+function clearMessages() {
+    messagesContainer.innerHTML = '';
 }
 
 function showLoadingIndicator() {
@@ -77,19 +99,9 @@ async function captureScreenshot() {
     }
 }
 
-/**
- * Clean and organize UI context data for LLM consumption (OmniParser-style).
- * - Preserves enumerate-order IDs (idx) to stay aligned with the labeled overlay image numbering
- * - Does NOT sort or reindex
- * - Formats elements as HTML-ish tags ("screen_info")
- *
- * @param {Array} parsedContent - Array of UI elements from screenshot parser
- * @returns {string} Formatted UI context string
- */
 function cleanUIContext(parsedContent) {
     if (!Array.isArray(parsedContent) || parsedContent.length === 0) return '';
 
-    // Minimal escaping to keep the alt attribute valid
     const escapeAlt = (s) => {
         if (s === null || s === undefined) return '';
         return String(s)
@@ -105,34 +117,29 @@ function cleanUIContext(parsedContent) {
         const content = escapeAlt(element?.content ?? '');
         const interactive = element?.interactivity === true ? 'true' : 'false';
 
-        // OmniParser-style tags
         if (type === 'text') {
             return `<p id=${idx} class="text" alt="${content}" data-interactive="${interactive}"> </p>`;
         }
-
-        // Default everything else (including "icon") to icon-style
         return `<img id=${idx} class="icon" alt="${content}" data-interactive="${interactive}"> </img>`;
     }).join('\n');
 }
 
-function exitWelcomeMode() {
-    if (isFirstMessage) {
-        chatContainer.classList.remove('welcome-mode');
-        const welcomeMsg = document.querySelector('.message.welcome');
-        if (welcomeMsg) welcomeMsg.style.display = 'none';
-        isFirstMessage = false;
+function getAllBoundingBoxes(parsedContent) {
+    if (Array.isArray(parsedContent)) {
+        return parsedContent
+            .filter(item => item.bbox)
+            .map(item => item.bbox);
     }
+    return [];
 }
 
-async function clearScreenshots(){
-    if (numOfScreenshots >= 5){
+async function clearScreenshots() {
+    if (numOfScreenshots >= 5) {
         try {
             const result = await window.electronAPI.clearScreenshotDirectories();
             if (result.success) {
                 numOfScreenshots = 0;
                 console.log('Screenshot directories cleared successfully');
-            } else {
-                console.error('Failed to clear screenshot directories:', result.error);
             }
         } catch (error) {
             console.error('Error clearing screenshot directories:', error);
@@ -140,48 +147,73 @@ async function clearScreenshots(){
     }
 }
 
-async function sendMessage() {
-    const start = Date.now();
-    const message = messageInput.value.trim();
-    if (!message){
-        console.log('No message entered');
-        return;
+// ============ ACTION EXECUTION ============
+
+async function executeClick(targetId, boundingBoxes) {
+    const targetBox = boundingBoxes[targetId];
+    if (targetBox) {
+        const screenWidth = window.screen.width;
+        const screenHeight = window.screen.height;
+        
+        const x = Math.round((targetBox[0] + targetBox[2]) / 2 * screenWidth);
+        const y = Math.round((targetBox[1] + targetBox[3]) / 2 * screenHeight);
+        
+        console.log(`Executing click at (${x}, ${y}) for target ${targetId}`);
+        const result = await window.electronAPI.executeClick(x, y);
+        return result.success;
+    } else {
+        console.warn('Target ID not found in bounding boxes:', targetId);
+        return false;
     }
-
-    exitWelcomeMode();
-
-    // Add user message to UI immediately and clear input field
-    addMessage(message, 'user');
-    messageInput.value = '';
-
-    await triggerNextStep(message);
-    
-    const end = Date.now();
-    console.log('Time taken:', end - start, 'ms');
 }
 
-async function triggerNextStep(message=null) {
-    if (message === null){
-        // const history = agent.getFullHistory();
-        // message = history[history.length - 1].content;
-        message = "The user completed the previous step. Is the task completed? If not, what's next? DO NOT REPEAT STEPS.";
-    }
-    exitWelcomeMode();
-    console.log('Triggering next step with message:', message);
-    let completedTask = false;
-    // Show loading indicator before LLM call
-    showLoadingIndicator();
+async function executeScroll(direction, amount = 5) {
+    console.log(`Executing scroll ${direction} by ${amount}`);
+    const result = await window.electronAPI.executeScroll(direction, amount);
+    return result.success;
+}
 
+async function executeType(text) {
+    console.log(`Executing type: "${text.substring(0, 30)}..."`);
+    const result = await window.electronAPI.executeType(text);
+    return result.success;
+}
+
+async function executeKey(key, modifiers = []) {
+    console.log(`Executing key: ${key}`);
+    const result = await window.electronAPI.executeKey(key, modifiers);
+    return result.success;
+}
+
+// ============ AUTONOMOUS LOOP ============
+
+async function runAutonomousStep(message = null) {
+    // Check if stopped before starting
+    if (shouldStop) {
+        return { done: true, stopped: true };
+    }
+    
+    if (message === null) {
+        message = "Continue with the task. What's the next action?";
+    }
+    
+    showLoadingIndicator();
+    await clearScreenshots();
+    
+    // Check again after clearing
+    if (shouldStop) {
+        hideLoadingIndicator();
+        return { done: true, stopped: true };
+    }
+    
     const screenshot = await captureScreenshot();
     numOfScreenshots += 1;
 
-    // Initilize variables for llm api call
     let currentImageBase64 = null;
     let labeledImageBase64 = null;
     let uiContext = "";
     let boundingBoxes = [];
 
-    // Parse screenshot with FastAPI server
     if (screenshot) {
         try {
             const result = await window.electronAPI.parseScreenshot(screenshot);
@@ -189,45 +221,43 @@ async function triggerNextStep(message=null) {
                 const filteredContent = result.parsedContent;
                 labeledImageBase64 = result.labeledImageBase64;
 
-                // Save labeled screenshot to data/labeled_screenshots
                 if (labeledImageBase64) {
                     window.electronAPI.saveLabeledScreenshot(labeledImageBase64)
-                        .then(saveResult => {
-                            if (saveResult.success) {
-                                console.log('Labeled screenshot saved:', saveResult.filename);
-                            } else {
-                                console.error('Failed to save labeled screenshot:', saveResult.error);
-                            }
-                        })
                         .catch(error => console.error('Error saving labeled screenshot:', error));
                 }
 
-                // Clean and organize UI context (OmniParser-style, no sorting)
                 uiContext = cleanUIContext(filteredContent);
-                console.log('UI context:', uiContext);
-
                 currentImageBase64 = result.imageBase64;
                 boundingBoxes = getAllBoundingBoxes(filteredContent);
             } else {
                 hideLoadingIndicator();
-                addMessage(`Error: ${result.error}`, 'system');
-                return;
+                const errorMsg = result.error || 'Unknown error';
+                if (errorMsg.includes('1033') || errorMsg.includes('OmniParser')) {
+                    addMessage(`OmniParser server error - check if server is running and URL is valid`, 'system');
+                } else {
+                    addMessage(`Error: ${errorMsg}`, 'system');
+                }
+                return { done: true, error: errorMsg, isOmniParserError: true };
             }
         } catch (error) {
             hideLoadingIndicator();
             addMessage(`Error parsing: ${error.message}`, 'system');
-            return;
+            return { done: true, error: error.message, isOmniParserError: true };
         }
     } else {
         hideLoadingIndicator();
         addMessage('Error: Failed to take screenshot', 'system');
-        return;
+        return { done: true, error: 'Screenshot failed' };
     }
 
-    // Get selected model
+    // Check before LLM call (the slowest part)
+    if (shouldStop) {
+        hideLoadingIndicator();
+        return { done: true, stopped: true };
+    }
+
     const selectedModel = modelSelector.value;
     
-    // Call agent with message, UI context, screenshot, and model
     try {
         const response = await agent.sendMessage(
             message, 
@@ -236,120 +266,251 @@ async function triggerNextStep(message=null) {
             labeledImageBase64, 
             selectedModel
         );
+        
+        // Check after LLM call
+        if (shouldStop) {
+            hideLoadingIndicator();
+            return { done: true, stopped: true };
+        }
+        
         console.log('Agent response:', response);
         
         if (!response.output || !Array.isArray(response.output)) {
             throw new Error('Invalid response format: missing output array');
         }
 
-        let targetId = null;
+        let actions = [];
         let reasoningText = '';
         let messageText = '';
 
-        // Process each item in the output array
         for (const item of response.output) {
-            // Handle reasoning type
             if (item.type === 'reasoning') {
                 if (item.summary) {
                     reasoningText = item.summary;
                     console.log('Reasoning:', reasoningText);
                 }
             }
-            
-            // Handle computer_call type
-            else if (item.type === 'computer_call') {
-                if (item.action && item.action.type === 'click' && item.action.target_id) {
-                    targetId = item.action.target_id;
-                    console.log('Action: click on', targetId, 'button:', item.action.button || 'left');
-                } else if (item.action && item.action.type === 'scroll') {
-                    console.log("NEED TO SCROLL")
-                } else if (item.action && item.action.type === 'done') {
-                    completedTask = true;
-                }
+            else if (item.type === 'action_batch' && Array.isArray(item.actions)) {
+                actions = item.actions;
             }
-            
-            // Handle message type
+            else if (item.type === 'computer_call' && item.action) {
+                // Backward compatibility with single action format
+                actions = [item.action];
+            }
             else if (item.type === 'message') {
                 if (item.reply) {
                     messageText += (messageText ? ' ' : '') + item.reply;
                 }
             }
         }
-        console.log('Message text:', messageText);
 
         hideLoadingIndicator();
-        if (!completedTask) {
-            // Highlight element if specified
-            if (targetId && boundingBoxes) {
-                await highlightElement(targetId, boundingBoxes);
-            }
 
-            addMessage(messageText, 'system');
-        } else {
-            addMessage('Task completed', 'system');
+        // Check for [APPLIED] in message (track new applications)
+        if (messageText) {
+            await checkAndSaveNewApplication(messageText);
         }
+
+        // Execute action batch
+        if (actions.length > 0) {
+            addMessage(messageText || `Executing ${actions.length} action(s)`, 'action');
+            
+            for (let i = 0; i < actions.length; i++) {
+                const action = actions[i];
+                
+                // Check if stopped mid-batch
+                if (shouldStop) {
+                    return { done: true, stopped: true };
+                }
+                
+                console.log(`Executing action ${i + 1}/${actions.length}:`, action.type);
+                
+                if (action.type === 'click' && action.target_id !== null && action.target_id !== undefined) {
+                    await executeClick(action.target_id, boundingBoxes);
+                    await sleep(150);
+                }
+                else if (action.type === 'double_click' && action.target_id !== null && action.target_id !== undefined) {
+                    await executeClick(action.target_id, boundingBoxes);
+                    await sleep(50);
+                    await executeClick(action.target_id, boundingBoxes);
+                    await sleep(150);
+                }
+                else if (action.type === 'scroll') {
+                    const dir = action.direction || 'down';
+                    const amt = action.amount || 5;
+                    await executeScroll(dir, amt);
+                    await sleep(200);
+                }
+                else if (action.type === 'type' && action.text) {
+                    await executeType(action.text);
+                    await sleep(100);
+                }
+                else if (action.type === 'key') {
+                    await executeKey(action.key, action.modifiers || []);
+                    await sleep(100);
+                }
+                else if (action.type === 'wait') {
+                    const waitMs = action.ms || 1000;
+                    await sleep(waitMs);
+                }
+                else if (action.type === 'done') {
+                    addMessage('Task completed!', 'system');
+                    return { done: true };
+                }
+            }
+            
+            // Small delay after batch before next screenshot
+            await sleep(300);
+            return { done: false };
+        }
+
+        // No actions but have message
+        if (messageText) {
+            addMessage(messageText, 'system');
+        }
+
+        return { done: false };
         
     } catch (error) {
-        // Hide loading indicator on error
         hideLoadingIndicator();
         console.error('Error:', error);
         addMessage(`Error: ${error.message}`, 'system');
+        return { done: true, error: error.message };
     }
 }
 
-async function highlightElement(targetId, boundingBoxes) {
-    console.log('Highlighting target ID:', targetId);
-    const targetBox = boundingBoxes[targetId];
-    if (targetBox) {
-        const screenWidth = window.screen.width;
-        const screenHeight = window.screen.height;
-        const rect = {
-            x: targetBox[0] * screenWidth,
-            y: targetBox[1] * screenHeight,
-            width: (targetBox[2] - targetBox[0]) * screenWidth,
-            height: (targetBox[3] - targetBox[1]) * screenHeight
-        };
-        window.electronAPI.sendDrawRectangle(rect);
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Format applied jobs as a string for the agent prompt
+// Limit to most recent 75 jobs to avoid context length issues
+function formatAppliedJobsList() {
+    if (appliedJobs.length === 0) {
+        return "[APPLIED JOBS LIST]\nNone yet - this is the first session.";
+    }
+    
+    // Take the most recent jobs (last entries in the list)
+    const maxJobs = 75;
+    const recentJobs = appliedJobs.slice(-maxJobs);
+    const jobLines = recentJobs.map(job => `${job.company} | ${job.position}`).join('\n');
+    
+    const header = appliedJobs.length > maxJobs 
+        ? `[APPLIED JOBS LIST] (showing ${maxJobs} most recent of ${appliedJobs.length} total)`
+        : `[APPLIED JOBS LIST]`;
+    
+    return `${header}\nCompany | Position\n${jobLines}`;
+}
+
+// Parse "[APPLIED]" message and save new application
+async function checkAndSaveNewApplication(messageText) {
+    const appliedMatch = messageText.match(/\[APPLIED\]\s*(.+?)\s*\|\s*(.+)/i);
+    if (appliedMatch) {
+        const company = appliedMatch[1].trim();
+        const position = appliedMatch[2].trim();
+        
+        // Check if already in our list (avoid duplicates)
+        const alreadyTracked = appliedJobs.some(
+            job => job.company.toLowerCase() === company.toLowerCase() && 
+                   job.position.toLowerCase() === position.toLowerCase()
+        );
+        
+        if (!alreadyTracked) {
+            try {
+                const result = await window.electronAPI.addAppliedJob(company, position);
+                if (result.success) {
+                    appliedJobs.push({ company, position });
+                    console.log(`Tracked new application: ${company} - ${position}`);
+                    addMessage(`Saved application: ${company} - ${position}`, 'system');
+                }
+            } catch (error) {
+                console.error('Error saving new application:', error);
+            }
+        }
+    }
+}
+
+async function startAgent() {
+    if (isRunning) {
+        addMessage('Already running!', 'system');
+        return;
+    }
+    
+    isRunning = true;
+    shouldStop = false;
+    startButton.disabled = true;
+    stopButton.disabled = false;
+    
+    // Clear previous messages and start fresh
+    clearMessages();
+    addMessage('Starting job application agent...', 'system');
+    
+    // Open job board URL from config
+    if (userConfig && userConfig.jobBoard && userConfig.jobBoard.url) {
+        addMessage(`Opening ${userConfig.jobBoard.url}...`, 'action');
+        await window.electronAPI.openUrl(userConfig.jobBoard.url);
+        // Wait for browser to open and load
+        await sleep(3000);
+    }
+    
+    // Include applied jobs list in the initial message
+    const appliedJobsContext = formatAppliedJobsList();
+    const initialMessage = `${appliedJobsContext}
+
+Start browsing the current page for job listings. Look for relevant software engineering, data science, or machine learning internship positions that match my profile. Open promising job listings and apply to relevant ones. SKIP any jobs from companies where I've already applied to a similar position.`;
+    
+    let message = initialMessage;
+    let stepCount = 0;
+    let errorCount = 0;
+    const maxSteps = 200;
+    const maxErrors = 3;
+    
+    while (isRunning && !shouldStop && stepCount < maxSteps) {
+        stepCount++;
+        console.log(`\n=== Step ${stepCount} ===`);
+        
+        const result = await runAutonomousStep(message);
+        
+        if (result.done) {
+            if (result.error && errorCount < maxErrors) {
+                // Transient error - wait and retry
+                errorCount++;
+                const retryDelay = result.isOmniParserError ? 5000 : 3000;
+                addMessage(`Retrying after error (${errorCount}/${maxErrors})...`, 'system');
+                await sleep(retryDelay);
+                continue;
+            }
+            break;
+        }
+        
+        // Reset error count on successful step
+        errorCount = 0;
+        message = null;
+        await sleep(500); // Shorter delay since actions are batched
+    }
+    
+    isRunning = false;
+    startButton.disabled = false;
+    stopButton.disabled = true;
+    
+    if (shouldStop) {
+        addMessage(`Stopped by user after ${stepCount} steps`, 'system');
     } else {
-        console.warn('Target ID not found in bounding boxes:', targetId);
+        addMessage(`Completed after ${stepCount} steps`, 'system');
     }
 }
 
-function getAllBoundingBoxes(parsedContent) {
-    // If parsedContent is already an array, just extract the bbox property
-    if (Array.isArray(parsedContent)) {
-        return parsedContent
-            .filter(item => item.bbox) // Ensure bbox exists
-            .map(item => item.bbox);   // Return the [x,y,w,h] array
-    }
-    return [];
-}
-
-// function getHistory() {
-//     console.log('Getting history');
-//     console.log(agent.getHistorySummary());
-// }
-
-// Listen for main-initiated triggerNextStep calls
-if (window.electronAPI && window.electronAPI.onTriggerNextStep) {
-    window.electronAPI.onTriggerNextStep((msg) => {
-        triggerNextStep(msg);
-    });
+function stopAgent() {
+    if (!isRunning) return;
+    
+    shouldStop = true;
+    addMessage('Stopping...', 'system');
 }
 
 // Event listeners
-sendButton.addEventListener('click', sendMessage);
-messageInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') sendMessage();
-});
-// getHistoryButton.addEventListener('click', getHistory);
+startButton.addEventListener('click', startAgent);
+stopButton.addEventListener('click', stopAgent);
 
-// Display welcome message
-const welcomeDiv = document.createElement('div');
-welcomeDiv.className = 'message system welcome';
-welcomeDiv.textContent = 'Welcome to VisorAI';
-messagesContainer.appendChild(welcomeDiv);
-messagesContainer.scrollTop = messagesContainer.scrollHeight;
-
-// Start in welcome mode
-chatContainer.classList.add('welcome-mode');
+// Initial welcome message
+addMessage('Job Application Agent', 'welcome');
+addMessage('Click Start to begin autonomous job search and application.', 'system');

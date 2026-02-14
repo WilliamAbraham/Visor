@@ -11,9 +11,11 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "electron": "^39.2.7"
+    "electron": "^39.2.7",
+    "electron-rebuild": "^3.2.9"
   },
   "dependencies": {
+    "@jitsi/robotjs": "^0.6.21",
     "@openai/agents": "^0.3.4",
     "@openrouter/sdk": "^0.3.11",
     "dotenv": "^17.2.3",
